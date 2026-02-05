@@ -2,7 +2,8 @@
 CFM Training Script for ADNI Dataset
 """
 
-# TODO: create proper enviroment temp: env-tesi
+# TODO: create proper enviroment temp: env-tesi, epochs nomenclature used improperly? check training loop
+# NOTE: if lr shedule = ReduceLROnPlateau need validation set for validation loss for scheduler step
 
 # Libraries
 import os
@@ -13,7 +14,7 @@ import argparse
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher as CFM
+#from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher as CFM
 from model.unet_ADNI import create_model 
 from model.trainer import Trainer   # import Trainer class from trainer.py  
 from dataset import Dataset
@@ -22,6 +23,8 @@ import datetime
 import yaml
 import wandb
 
+#os.environ["WANDB_DISABLE_CODE"] = "true"          # no code snapshot
+#os.environ["WANDB_WATCH"] = "false"                # no model graph logging
 
 # Hyperparameters and settings: implemented as argparse arguments later
 epochs = 10
@@ -44,6 +47,10 @@ lr_min = 2e-7
 #gammadecay = 0.9999
 #pl_factor = 0.5
 #pl_patience = 500
+use_ema=True
+ema_decay=0.9999
+update_ema_every=100
+#grad_norm=1.0??? #gradient clipping norm max
 results_dir = "./results_CFM_ADNI"
 key_dir = "./key.yaml"  # wandb key file
 
@@ -121,15 +128,21 @@ trainer = Trainer(
     loader=loader,
     val_loader=(val_loader if 'val_loader' in locals() else None),
     device=device,
-    lr=lr,
+    batch_size=batch_size,
     epochs=epochs,
+    lr=lr,
+    tot_steps=epochs * len(loader), # total training steps: better way to specify?
     save_every=save_every,
     results_dir=run_dir,
     loss_type=loss,
+    use_ema=use_ema,
+    ema_decay=ema_decay,
+    update_ema_every=update_ema_every,
     warmup_steps=warmup_steps,
     scheduler_type=lr_scheduler,
     lr_min=lr_min,
-    wb=wb
+    wb=wb,
+    #grad_norm=grad_norm #gradien clipping norm max
     )
 
 # Start training

@@ -1,16 +1,17 @@
-
 import os
+import copy
 import numpy as np
-from tomlkit import datetime
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from torch.nn.utils import clip_grad_norm_
 from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher as CFM
 from torch.optim.lr_scheduler import CosineAnnealingLR, ExponentialLR, ReduceLROnPlateau
 import wandb
 
 # Trainer class for CFM model training
-# TODO: implement validation, ema model 
+# TODO: check overall loading/saving checkpoint functionality, hardcoded batch_idx, missing grad clipping
+# is x0 changing every tiome for validation okay? should be fixed for consistency? also for ddpm?
 # NOTE: .sample_location_and_conditional_flow in torchcfm/guided_conditional_flow_matching.py lines 274-...
 
 class Trainer:
@@ -20,8 +21,10 @@ class Trainer:
         loader,
         val_loader,
         device,
+        batch_size=4,
+        epochs=10,
         lr = 2e-4,
-        epochs = 1000,
+        tot_steps = 1000,
         loss_type = "le",
         scheduler_type = None,
         warmup_steps = 0,
@@ -29,80 +32,96 @@ class Trainer:
         results_dir = "./results_CFM",
         save_every = 100,
         wb=False,
+        use_ema=True,
+        ema_decay=0.9999,
+        update_ema_every=100,
+        #grad_norm=1.0,
         ):
         super().__init__()
         self.model = model
         self.loader = loader
         self.val_loader = val_loader
         self.device = device
-        self.step = 0
+
+        self.batch_size = batch_size
         self.epochs = epochs
+        self.step = 0
+        self.tot_steps = tot_steps
+        
         self.lr = lr
         self.scheduler_type = scheduler_type
         self.warmup_steps = warmup_steps
-        self.results_dir = results_dir
-        self.save_every = save_every
-        self.loss_type = loss_type
         self.lr_min = lr_min
+        self.loss_type = loss_type
+
+        #self.grad_norm = grad_norm
+        
+        self.save_every = save_every
+        self.results_dir = results_dir
         self.wb = wb
+        
+        # EMA model
+        self.use_ema = use_ema
+        self.ema_decay = ema_decay
+        self.update_ema_every = update_ema_every
+        if self.use_ema:
+            self.ema_model = copy.deepcopy(self.model).eval()
+            print("EMA model initialized")
+        else:
+            self.ema_model = None
 
         # Optimizer: Adam
-        self.opt = torch.optim.Adam(model.parameters(), lr=lr)
+        self.opt = torch.optim.Adam(model.parameters(), lr=self.lr)
 
-        # CFM instantiation
+        # Learning rate scheduler
+        if self.scheduler_type == "cos":
+            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.tot_steps - self.warmup_steps, eta_min=self.lr_min)
+        elif self.scheduler_type == "exp":
+            self.lr_scheduler = ExponentialLR(self.opt, gamma=0.9999)
+        elif self.scheduler_type == "plateau":
+            self.lr_scheduler = ReduceLROnPlateau(self.opt, mode='min', factor=0.5, patience=500)
+        else:
+            self.lr_scheduler = None
+
+        # CFM: exact OT
         self.fm = CFM(sigma=0.0)
 
-    # Compute loss from loss type
-    def compute_loss(self, noise, x_recon):
+        # Initiating validation tracking
+        self.val_loss = None
+        self.ema_val_loss=None
+        self.best_val_loss = float('inf')
+        self.best_ema_val_loss = float('inf')
+
+        # Wandb logging
+        self.log = self.wandb_log()
+
+    # Compute loss by loss type
+    def compute_loss(self, ut, vt):
         """
-        Compute loss between reconstructed and original noise
+        Compute loss between reconstructed and original noise at time t
         Args:
         -----
-            x_recon : tensor
-            noise : tensor
+            ut : tensor
+                original noise sampled at time t (gauss noise)
+            vt : tensor
+                reconstructed noise at time t predicted by the model (velocity field)
+        Returns:
+        --------
+            loss : tensor
+                computed loss value 
         """
-        if self.loss_type == 'l1':
-            #loss = (noise - x_recon).abs().mean()
-            loss = torch.mean(torch.abs(noise - x_recon))
-        elif self.loss_type == 'l2':
-            loss = F.mse_loss(x_recon, noise)
-        elif self.loss_type == 'le':
-            loss_l1 = (noise - x_recon).abs().mean()
-            loss_l2 = F.mse_loss(x_recon, noise)
-            loss = 0.3 * loss_l1 + 0.7 * loss_l2 # weighted sum coffincients to evaluate
-        else:
+        if self.loss_type == 'l1': # mean absolute error
+            loss = torch.mean(torch.abs(ut - vt))
+        elif self.loss_type == 'l2': # mean squared error
+            loss = F.mse_loss(vt, ut)
+        elif self.loss_type == 'le': # weighted sum of l1 and l2 with fixed coefficients
+            loss_l1 = (ut - vt).abs().mean()
+            loss_l2 = F.mse_loss(vt, ut)
+            loss = 0.3 * loss_l1 + 0.7 * loss_l2 # weighted sum coefficients to evaluate
+        else: 
             raise NotImplementedError()
         
         return loss
-    
-    def schedule_lr(self):
-        """
-        Learning rate scheduler step
-        """
-        if self.step < self.warmup_steps:
-            lr_scale = float(self.step + 1) / float(self.warmup_steps)
-            current_lr = self.lr * lr_scale
-            for param_group in self.opt.param_groups:
-                param_group['lr'] = current_lr
-        elif self.step == self.warmup_steps: # at the end of warmup, set lr to train_lr if not already reached
-            for param_group in self.opt.param_groups:
-                param_group['lr'] = self.lr
-                print(f"LR warmup completed, current LR set: {current_lr}, step: {self.step}")
-                print(f"Starting LR scheduler: CosineAnnealingLR with min LR: {self.lr_min}")
-        else:    
-            if self.scheduler_type == "cos":
-                self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.epochs - self.warmup_steps, eta_min=self.lr_min)
-            elif self.scheduler_type == "exp":
-                self.lr_scheduler = ExponentialLR(self.opt, gamma=0.9999)
-            elif self.scheduler_type == "plateau":
-                self.lr_scheduler = ReduceLROnPlateau(self.opt, mode='min', factor=0.5, patience=500, verbose=True)
-            elif self.scheduler_type is None:
-                pass
-            else:
-                raise NotImplementedError(f"LR scheduler {self.scheduler_type} not implemented")
-
-            if self.lr_scheduler is not None:
-                self.lr_scheduler.step()
 
     def move_to_device(self, batch):
         """
@@ -121,13 +140,81 @@ class Trainer:
             for k, v in batch.items()
         }
     
+    def update_ema(self):
+        """Update EMA model weights with exponential moving average"""
+
+        if not self.use_ema:
+            return
+        
+        # Update EMA parameters
+        with torch.no_grad():
+            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()):
+                ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
+    
     def validate(self):
-        val_loss=None
-        return val_loss
+        """Compute validation loss"""
+
+        if self.val_loader is None:
+            return None
+
+        self.model.eval()
+        val_losses = []
+
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(self.val_loader):
+                batch = self.move_to_device(batch)
+                
+                image = batch['image']
+                mask = batch['mask']
+                diagnosis = batch['diagnosis']
+                
+                # Sample noise and compute validation loss (same as training)
+                x0 = torch.randn_like(image)
+                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                
+                vt = self.model(torch.cat([xt, mask], dim=1), t, y1)
+                
+                loss = self.compute_loss(ut, vt)
+                val_losses.append(loss.item())
+
+                # Limit validation batches for speed
+                if batch_idx >= 49:  # Validate on first 50 batches
+                    break
+                
+        self.model.train()
+        avg_val_loss = np.mean(val_losses)
+        return avg_val_loss
     
     def validate_ema(self):
-        ema_val_loss=None
-        return ema_val_loss
+        """Compute validation loss with EMA model"""
+
+        if not self.use_ema or self.ema_model is None or self.val_loader is None:
+            return None
+        
+        self.ema_model.eval()
+        val_losses = []
+        
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(self.val_loader):
+                batch = self.move_to_device(batch)
+                
+                image = batch['image']
+                mask = batch['mask']
+                diagnosis = batch['diagnosis']
+                
+                # Sample noise and compute validation loss with EMA model
+                x0 = torch.randn_like(image)
+                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                
+                vt = self.ema_model(torch.cat([xt, mask], dim=1), t, y1)
+                
+                loss = self.compute_loss(ut, vt)
+                val_losses.append(loss.item())
+                
+                if batch_idx >= 49:
+                    break
+        
+        return np.mean(val_losses)
     
     def save_checkpoint(self, avg_loss=None, val_loss=None, ema_val_loss=None):
         """
@@ -145,13 +232,11 @@ class Trainer:
             'step': self.step,
             'model': self.model.state_dict(),
             'optimizer': self.opt.state_dict(),
+            'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
+            'ema_model': self.ema_model.state_dict() if self.ema_model is not None else None,
             'val_loss': val_loss,
             'avg_loss':avg_loss,
             'ema_val_loss': ema_val_loss,
-            #ema
-            #best_val_loss
-            #best_milestone
-            #val_losses
         }
 
         path = f"{self.results_dir}/checkpoint_{self.step}.pt"
@@ -159,37 +244,58 @@ class Trainer:
         print(f"Checkpoint {self.step} saved: {path}")
 
     def load_checkpoint(self, checkpoint_path):
-        """
-        Load model checkpoint
+        """Load checkpoint and restore training state
         Args:
         -----
-            checkpoint_path: path to checkpoint file        
+            checkpoint_path: str
+                path to checkpoint file
         Returns:
         --------
-            checkpoint epoch number
+            step: int
+                training step to resume from
+        Note:
+        -----
+            This function assumes that the checkpoint contains the model state dict,
+            optimizer state dict, and optionally the lr_scheduler and ema_model state dicts.        
         """
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
         self.model.load_state_dict(checkpoint['model'])
         self.opt.load_state_dict(checkpoint['optimizer'])
+        
+        if self.lr_scheduler is not None and checkpoint.get('lr_scheduler'):
+            self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        
+        if self.use_ema and checkpoint.get('ema_model'):
+            self.ema_model.load_state_dict(checkpoint['ema_model'])
+        
         self.step = checkpoint.get('step', 0)
-        return checkpoint['epoch']
+        print(f"Resumed from step {self.step}")
+        return self.step
     
     def wandb_log(self):
+        """Initialize wandb logging"""
+
         if self.wb:
             #log with weights and biases 
             now=self.wb
-            wandb.init(project="med-ddpm", name=f"{now} ",
+            batch_size = self.loader.batch_size if hasattr(self.loader, 'batch_size') else 'unknown'
+            
+            wandb.init(project="med-cfm", name=f"{now}",
                        config={
+                            "tot_steps": self.tot_steps,
                             "epochs": self.epochs,
+                            "batch_size": batch_size,
                             "learning_rate": self.lr,
                             "lr_warmup_steps": self.warmup_steps,
                             "lr_min": self.lr_min,
-                            "batch_size" : self.batch_size,
-                            "steps" : self.step,
-                            "update_ema_every" : self.update_ema_every,
-                            "gradient_accumulate_every": self.gradient_accumulate_every,
-                            "sample_every" : self.save_and_sample_every,
-                            "initial_weights" :self.initial_weights
+                            "lr_scheduler": self.scheduler_type,
+                            "loss_type": self.loss_type,
+                            "save_every": self.save_every,
+                            "use_ema": self.use_ema,
+                            "ema_decay": self.ema_decay,
+                            #"update_ema_every": self.update_ema_every
+                            # "grad_norm": self.grad_norm
                             }
                     )
     
@@ -200,11 +306,13 @@ class Trainer:
         """
         
         os.makedirs(self.results_dir, exist_ok=True)
+        
         self.model.train()
          
-        running_losses = [] # to track losses for logging    
+        checkpoint_losses = [] # windowed: reset after each checkpoint
 
-        while self.step < self.epochs:
+        while self.step < self.tot_steps:
+        #for epoch in range(self.epochs):
             for batch in self.loader:
                 batch = self.move_to_device(batch)
 
@@ -222,7 +330,7 @@ class Trainer:
                 vt = self.model( # vt=predicted velocity
                     torch.cat([xt, mask], dim=1),  # Concatenate along channel dimension to condition on mask
                     t, # time
-                    y1  # exit from .sample_location_and_conditional_flow
+                    y1  # from .sample_location_and_conditional_flow
                 )
 
                 # Compute MSE loss between predicted and target velocity
@@ -232,51 +340,82 @@ class Trainer:
                 # Optimization step
                 self.opt.zero_grad()
                 loss.backward()
+                # gradient clipping: clip_grad_norm_(self.model.parameters(), max_norm=self.grad_norm)
                 self.opt.step()
+                
+                # Update EMA model
+                if self.step % self.update_ema_every == 0:
+                    self.update_ema()
 
-                # lr scheduler step by calling schedule_lr function
-                self.schedule_lr()
+                # linear warmup and lr scheduling if/which applied
+                if self.step < self.warmup_steps:
+                    lr_scale = (self.step + 1) / self.warmup_steps
+                    for param_group in self.opt.param_groups:
+                        param_group['lr'] = self.lr * lr_scale
+
+                elif self.step == self.warmup_steps:
+                    for param_group in self.opt.param_groups:
+                        param_group['lr'] = self.lr
+                    print(f"Warmup complete at step {self.step}")
+
+                elif self.step > self.warmup_steps and self.lr_scheduler is not None:
+                    if not isinstance(self.lr_scheduler, ReduceLROnPlateau):
+                        self.lr_scheduler.step()
+
+                # Track lr, loss
                 current_lr = self.opt.param_groups[0]['lr']
-                
-                self.step += 1
-                
-                # Track loss
                 current_loss = loss.item()
-                running_losses.append(current_loss) # append current loss to list
-                avg_loss = np.mean(running_losses)
+                checkpoint_losses.append(current_loss)
+
+                self.step += 1
 
                 # Print
-                print(f"Step [{self.step}/{self.epochs}] - Loss: {current_loss:.4f}")
+                print(f"Epoch: {self.step//(self.tot_steps//self.epochs)}, step [{self.step}/{self.tot_steps}] - Loss: {current_loss:.4f}")
                 
-                # Log training info to weights and biases
-                wandb.log({"step": self.step,
-                           "learning_rate": current_lr,
-                           "training_loss": avg_loss
-                })
-
+                # Log training info to wandb
+                if self.wb:
+                    wandb.log({"step": self.step,
+                               "learning_rate": current_lr,
+                               "training_loss": current_loss,
+                               #"ema_loss": self.ema_val_loss
+                    })
+                    
                 # Save checkpoint
                 if self.step % self.save_every == 0:
-                    # Overall average loss, validation loss, ema validation loss
+                    # Average loss over checkpoint window
+                    avg_loss = np.mean(checkpoint_losses)
+                    checkpoint_losses = [] 
+
+                    # Validation loss: if validation set provided
                     if self.val_loader is not None:
                         val_loss=self.validate()
-                        ema_val_loss=self.validate_ema()
+                        if self.use_ema:
+                            ema_val_loss=self.validate_ema()
 
-                        wandb.log({"val_loss": val_loss,
-                                   #"best_val_loss": self.best_val_loss,
-                                   #"best_ema_val_loss": self.best_ema_val_loss,
-                                   "ema_val_loss": ema_val_loss
-                        })
+                        # Update best validation loss
+                        if val_loss is not None and val_loss < self.best_val_loss:
+                            self.best_val_loss = val_loss
+                        if ema_val_loss is not None and ema_val_loss < self.best_ema_val_loss:
+                            self.best_ema_val_loss = ema_val_loss
+                        
+                        # Step ReduceLROnPlateau with validation loss
+                        if isinstance(self.lr_scheduler, ReduceLROnPlateau):
+                            self.lr_scheduler.step(val_loss)
+                        
                     else:
                         val_loss = None
-                        ema_val_loss = None
+                        ema_val_loss = None                
 
                     # Checkpoint saving
                     self.save_checkpoint(val_loss=val_loss, avg_loss=avg_loss, ema_val_loss=ema_val_loss)
-                    print(f"Step [{self.step}/{self.epochs}] - Checkpoint saved\n")
+                    print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
+
+                    if self.wb:
+                        wandb.log({"val_loss": val_loss if val_loss is not None else -1,
+                                   "ema_val_loss": ema_val_loss if ema_val_loss is not None else -1,
+                                   "best_val_loss": self.best_val_loss if val_loss is not None else -1,
+                                   "best_ema_val_loss": self.best_ema_val_loss if ema_val_loss is not None else -1,
+                                   "avg_loss": avg_loss
+                        })
 
                     # Sampling and visualization can be added here (see ddpm trainer)
-
-                    
-                
-    
-    
