@@ -6,6 +6,22 @@ import pandas as pd
 from pathlib import Path
 
 class Dataset(Dataset):
+    """
+    Class for loading the ADNI dataset. Expects a directory structure like:
+    dataset_dir/
+        image/
+            subject1_brain.nii.gz
+            subject2_brain.nii.gz
+        mask/
+            subject1_mask.nii.gz
+            subject2_mask.nii.gz
+        diagnosis/
+            train_subjects.csv
+            
+    Note:
+        For validation dataset same structure but with validation_subjects.csv in diagnosis/ folder.
+    """
+
     def __init__(self, dataset_dir):
         dataset_dir = Path(dataset_dir)
 
@@ -19,16 +35,16 @@ class Dataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, idx):
-        cid = self.ids[idx]
+        id = self.ids[idx]
 
-        image = nib.load(os.path.join(self.image_dir, f"{cid}_brain.nii.gz")).get_fdata()
-        mask = nib.load(os.path.join(self.mask_dir, f"{cid}_mask.nii.gz")).get_fdata()
+        image = nib.load(os.path.join(self.image_dir, f"{id}_brain.nii.gz")).get_fdata()
+        mask = nib.load(os.path.join(self.mask_dir, f"{id}_mask.nii.gz")).get_fdata()
 
         image = torch.from_numpy(image).float().unsqueeze(0)  # (1, D, H, W)
         mask = torch.from_numpy(mask).float().unsqueeze(0)    # (1, D, H, W)
 
         diagnosis = torch.tensor(
-            self.labels[cid],
+            self.labels[id],
             dtype=torch.long
         )  # scalar
 
