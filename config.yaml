@@ -25,5 +25,6 @@ parameters:
   use_ema: True
   ema_decay: 0.995
   grad_norm: 1.0 
+  val_seeds: [42, 135, 654]
 wandb:
   key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d

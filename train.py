@@ -64,6 +64,7 @@ parser.add_argument("--update_ema_every", type=int, default=params["update_ema_e
 parser.add_argument("--grad_norm", type=float, default=params["grad_norm"], help="Gradient clipping norm max, set to None to disable")
 parser.add_argument("--results_dir", type=str, default=dirs["results_dir"], help="Directory to save runs' results")
 parser.add_argument("--key", type=str, default=wb["key"], help="Weight and Biases key")
+parser.add_argument("--val_seeds", type=list, default=params["val_seeds"], help="Seeds for fixed sampling of validation set")
 
 args = parser.parse_args()
 
@@ -110,11 +111,11 @@ if os.path.exists(args.validation_dataset_dir):
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
-        shuffle=True, # False for fixed seeds
+        shuffle=False, # False for fixed seeds
         num_workers=args.num_workers,
         pin_memory=True,
         #persistent_workers = True,
-        drop_last = True # Flse for fixed seeds because shuffle False 
+        drop_last = False # Flse for fixed seeds because shuffle False 
     )
 
 #check 
@@ -165,7 +166,8 @@ trainer = Trainer(
     pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
     pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
     wb_run=(now if args.key is not None else None), # use timestamp as wandb run name if wandb logging enabled
-    grad_norm=args.grad_norm #gradien clipping norm max
+    grad_norm=args.grad_norm, #gradien clipping norm max
+    val_seeds=args.val_seeds # seeds for validation set fixed sampling
     )
 
 # Start training

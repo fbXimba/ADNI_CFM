@@ -40,6 +40,7 @@ class Trainer:
         ema_decay: float = 0.9999,
         update_ema_every: int = 100,
         grad_norm: float = 1.0,
+        val_seeds: list = [42, 135, 654]
         ):
         super().__init__()
         self.model = model
@@ -58,6 +59,8 @@ class Trainer:
         self.loss_type = loss_type
 
         self.grad_norm = grad_norm
+
+        self.val_seeds = val_seeds
         
         self.save_every = save_every
         self.results_dir = results_dir
@@ -162,62 +165,82 @@ class Trainer:
                 ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
     
     def validate(self):
-        """Compute validation loss"""
+        """Compute validation loss with multiple fixed seeds for reproducibility and reduced bias"""
 
-        if self.val_loader is None:
-            return None
+        self.model.eval() # keep but useless with torch.inference_mode(), old combo eval mode + no grad
+        seed_losses = []  # Store average loss for each seed
 
-        self.model.eval() # keep but useless with torch.inference_mode(), old combo: eval + no grad 
-        val_losses = []
-
-        with torch.inference_mode(): # no_grad + eval mode for layers like dropout, batchnorm
-            for batch in self.val_loader:
-                batch = self.move_to_device(batch)
-                
-                image = batch['image']
-                mask = batch['mask']
-                diagnosis = batch['diagnosis']
-                
-                # Sample noise and compute validation loss (same as training)
-                x0 = torch.randn_like(image)
-                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
-                
-                vt = self.model(torch.cat([xt, mask], dim=1), t, y1)
-                
-                loss = self.compute_loss(ut, vt)
-                val_losses.append(loss.item())
+        # Run validation with multiple seeds
+        for seed in self.val_seeds:
+            # Set seed for reproducible validation
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            np.random.seed(seed)
+            
+            seed_val_losses = []
+            
+            with torch.inference_mode(): # no grad + eval for layers like dropout, batchnorm
+                for batch in self.val_loader:
+                    batch = self.move_to_device(batch)
+                    
+                    image = batch['image']
+                    mask = batch['mask']
+                    diagnosis = batch['diagnosis']
+                    
+                    # Sample noise and compute validation loss
+                    x0 = torch.randn_like(image)
+                    t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                    
+                    vt = self.model(torch.cat([xt, mask], dim=1), t, y1)
+                    
+                    loss = self.compute_loss(ut, vt)
+                    seed_val_losses.append(loss.item())
+            
+            # Store average loss for this seed
+            seed_losses.append(np.mean(seed_val_losses))
                 
         self.model.train()
-        avg_val_loss = np.mean(val_losses)
+        # Return mean across all seeds for more robust validation metric
+        avg_val_loss = np.mean(seed_losses)
         return avg_val_loss
     
     def validate_ema(self):
-        """Compute validation loss with EMA model"""
-
-        if not self.use_ema or self.ema_model is None or self.val_loader is None:
-            return None
+        """Compute validation loss with EMA model using multiple fixed seeds for reproducibility"""
         
         self.ema_model.eval()
-        val_losses = []
+        all_seed_losses = []  # Store average loss for each seed
         
-        with torch.inference_mode():
-            for batch in self.val_loader:
-                batch = self.move_to_device(batch)
-                
-                image = batch['image']
-                mask = batch['mask']
-                diagnosis = batch['diagnosis']
-                
-                # Sample noise and compute validation loss with EMA model
-                x0 = torch.randn_like(image)
-                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
-                
-                vt = self.ema_model(torch.cat([xt, mask], dim=1), t, y1)
-                
-                loss = self.compute_loss(ut, vt)
-                val_losses.append(loss.item())
+        # Run validation with multiple seeds
+        for seed in self.val_seeds:
+            # Set seed for reproducible validation
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            np.random.seed(seed)
+            
+            seed_val_losses = []
+            
+            with torch.inference_mode():
+                for batch in self.val_loader:
+                    batch = self.move_to_device(batch)
+                    
+                    image = batch['image']
+                    mask = batch['mask']
+                    diagnosis = batch['diagnosis']
+                    
+                    # Sample noise and compute validation loss with EMA model
+                    x0 = torch.randn_like(image)
+                    t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                    
+                    vt = self.ema_model(torch.cat([xt, mask], dim=1), t, y1)
+                    
+                    loss = self.compute_loss(ut, vt)
+                    seed_val_losses.append(loss.item())
+            
+            # Store average loss for this seed
+            all_seed_losses.append(np.mean(seed_val_losses))
         
-        return np.mean(val_losses)
+        # Return mean across all seeds for more robust validation metric
+        return np.mean(all_seed_losses)
     
     def save_checkpoint(self, avg_loss=None):
         """
