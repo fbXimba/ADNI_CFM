@@ -1,10 +1,10 @@
 directories:
-  dataset_dir: "../ADNI_split/ADNI_training_dataset/"
-  validation_dataset_dir: "../ADNI_split/ADNI_validation_dataset/"
+  dataset_dir: "../ADNI_train_dataset/"
+  validation_dataset_dir: "../ADNI_validation_dataset/"
   results_dir: "./results_CFM_ADNI"
 parameters:
   epochs: 1000
-  batch_size: 4
+  batch_size: 4 # 8, 16 
   num_workers: 4
   input_size: 128
   num_channels: 64
@@ -18,12 +18,12 @@ parameters:
   warmup_steps: 5000
   lr_scheduler: "cos"
   lr_min: 2e-7
-  gammadecay: 0.9999
+  gamma_decay: 0.9999
   pl_factor: 0.5
   pl_patience: 500
   update_ema_every: 10
   use_ema: True
-  ema_decay: 0.9999
+  ema_decay: 0.995
   grad_norm: 1.0 
 wandb:
   key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d

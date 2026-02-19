@@ -5,7 +5,7 @@ import nibabel as nib
 import pandas as pd
 from pathlib import Path
 
-class Dataset(Dataset):
+class ADNIDataset(Dataset):
     """
     Class for loading the ADNI dataset. Expects a directory structure like:
     dataset_dir/
@@ -22,14 +22,14 @@ class Dataset(Dataset):
         For validation dataset same structure but with validation_subjects.csv in diagnosis/ folder.
     """
 
-    def __init__(self, dataset_dir):
+    def __init__(self, dataset_dir, split="train"):
         dataset_dir = Path(dataset_dir)
 
         self.image_dir = os.path.join(dataset_dir, "image")
         self.mask_dir = os.path.join(dataset_dir, "mask")
-        df = pd.read_csv(os.path.join(dataset_dir, "diagnosis", "train_subjects.csv"))
-        self.ids = df["Subjects"].tolist()
-        self.labels = dict(zip(df["Subjects"], df["diagnosis"]))
+        df = pd.read_csv(os.path.join(dataset_dir, "diagnosis", f"{split}_subjects.csv"))
+        self.ids = df["Subject"].tolist()
+        self.labels = df["Diagnosis"].tolist()
 
     def __len__(self):
         return len(self.ids)
@@ -44,7 +44,7 @@ class Dataset(Dataset):
         mask = torch.from_numpy(mask).float().unsqueeze(0)    # (1, D, H, W)
 
         diagnosis = torch.tensor(
-            self.labels[id],
+            self.labels[idx],
             dtype=torch.long
         )  # scalar
 

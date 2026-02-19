@@ -5,6 +5,13 @@ CFM Training Script for ADNI Dataset
 # TODO: create proper enviroment temp: env-tesi, epochs nomenclature used improperly? check training loop
 # NOTE: if lr shedule = ReduceLROnPlateau need validation set for validation loss for scheduler step
 
+# num_channels da 64 a 32
+# checkpoint true?
+# image size 64 ivece di 128
+# channel mult guardare: ora usa defaul a 128 (1,1,2,3,4)
+
+#TODO: try diff num_workers=0,2,4 diff batch size 4,8,16
+
 # Libraries
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
@@ -14,10 +21,9 @@ import argparse
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-#from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher as CFM
 from model.unet_ADNI import create_model 
 from model.trainer import Trainer   # import Trainer class from trainer.py  
-from dataset import Dataset
+from dataset import ADNIDataset
 from torch.utils.data import DataLoader
 import datetime
 import yaml
@@ -26,14 +32,15 @@ import wandb
 # Load configuration file: directoories, parameters and wandb
 with open("config.yaml") as f:
     config = yaml.safe_load(f)
-dir=config["directories"]
+dirs=config["directories"]
 params=config["parameters"]
+wb=config["wandb"]
 
 # Hyperparameters and settings
 parser = argparse.ArgumentParser()
 parser.add_argument("--epochs", type=int, default=params["epochs"], help="Number of training epochs")
-parser.add_argument("--dataset_dir", type=str, default=dir["dataset_dir"], help="Path to the training dataset")
-parser.add_argument("--validation_dataset_dir", type=str, default=dir["validation_dataset_dir"], help="Path to the validation dataset")
+parser.add_argument("--dataset_dir", type=str, default=dirs["dataset_dir"], help="Path to the training dataset")
+parser.add_argument("--validation_dataset_dir", type=str, default=dirs["validation_dataset_dir"], help="Path to the validation dataset")
 parser.add_argument("--batch_size", type=int, default=params["batch_size"], help="Batch size for training")
 parser.add_argument("--num_workers", type=int, default=params["num_workers"], help="Number of workers for data loading")
 parser.add_argument("--input_size", type=int, default=params["input_size"], help="Input size for the model")
@@ -55,8 +62,8 @@ parser.add_argument("--use_ema", type=bool, default=params["use_ema"], help="Use
 parser.add_argument("--ema_decay", type=float, default=params["ema_decay"], help="EMA decay")
 parser.add_argument("--update_ema_every", type=int, default=params["update_ema_every"], help="Update EMA every n steps")
 parser.add_argument("--grad_norm", type=float, default=params["grad_norm"], help="Gradient clipping norm max, set to None to disable")
-parser.add_argument("--results_dir", type=str, default=dir["results_dir"], help="Directory to save runs' results")
-parser.add_argument("--key_dir", type=str, default=dir["key_dir"], help="Weight and Biases key")
+parser.add_argument("--results_dir", type=str, default=dirs["results_dir"], help="Directory to save runs' results")
+parser.add_argument("--key", type=str, default=wb["key"], help="Weight and Biases key")
 
 args = parser.parse_args()
 
@@ -66,7 +73,7 @@ run_dir= os.path.join(args.results_dir, now)
 os.makedirs(run_dir, exist_ok=True)
 
 # Initialize wandb
-if args.key_dir is not None:
+if args.key is not None:
     # Set environment variables to disable unwanted wandb features
     try:
         os.environ["WANDB_DISABLE_CODE"] = "true"  # no code snapshot
@@ -85,7 +92,7 @@ else:
 
 
 # Dataset and DataLoader
-dataset = Dataset(args.dataset_dir) # from dataset.py
+dataset = ADNIDataset(args.dataset_dir, split="train") # from dataset.py
 
 loader = DataLoader( # from torch.utils.data
     dataset,
@@ -99,15 +106,15 @@ loader = DataLoader( # from torch.utils.data
 
 # Validation dataset and DataLoader
 if os.path.exists(args.validation_dataset_dir):
-    val_dataset = Dataset(args.validation_dataset_dir) # validation dataset
+    val_dataset = ADNIDataset(args.validation_dataset_dir, split="validation") # validation dataset
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
-        shuffle=True,
+        shuffle=True, # False for fixed seeds
         num_workers=args.num_workers,
         pin_memory=True,
-        #persistent_workers=True,
-        drop_last = True
+        #persistent_workers = True,
+        drop_last = True # Flse for fixed seeds because shuffle False 
     )
 
 #check 
@@ -118,9 +125,9 @@ batch = next(iter(loader))
 
 # device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 # Model
-
 in_channels = 2 # mask + noise image when conditioned
 out_channels = 1 # only one channel = one output velocity field
 
@@ -128,6 +135,7 @@ model = create_model(
    args.input_size, 
    args.num_channels, 
    args.num_res_blocks, 
+   #channel_mult=?, # default is 128, (1,1,2,3,4) in create_model in unet_ADNI.py
    class_cond=True, # condition on diagnosis
    in_channels=in_channels, 
    out_channels=out_channels,
@@ -153,10 +161,10 @@ trainer = Trainer(
     warmup_steps=args.warmup_steps,
     scheduler_type=args.lr_scheduler,
     lr_min=args.lr_min,
-    gammadecay=args.gammadecay, # for exponential decay scheduler
+    gamma_decay=args.gamma_decay, # for exponential decay scheduler
     pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
     pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
-    wb_run=(now if args.key_dir is not None else None), # use timestamp as wandb run name if wandb logging enabled
+    wb_run=(now if args.key is not None else None), # use timestamp as wandb run name if wandb logging enabled
     grad_norm=args.grad_norm #gradien clipping norm max
     )
 
