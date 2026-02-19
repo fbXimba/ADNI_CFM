@@ -51,6 +51,7 @@ class Trainer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.step = 0
+        self.tot_steps = self.epochs * len(self.loader) * self.batch_size
         
         self.lr = lr
         self.scheduler_type = scheduler_type
@@ -307,6 +308,7 @@ class Trainer:
                    config={
                         "epochs": self.epochs,
                         "batch_size": batch_size,
+                        "total_steps": self.tot_steps,
                         "learning_rate": self.lr,
                         "lr_warmup_steps": self.warmup_steps,
                         "lr_min": self.lr_min,
@@ -336,7 +338,6 @@ class Trainer:
         for epoch in range(self.epochs):
             for i, batch in enumerate(self.loader):
 
-                step=(epoch*len(self.loader) + i)*self.batch_size
                 #batch = self.move_to_device(batch) # moved inside CPU for memory efficiency
 
                 image = batch["image"]        # (B, 1, D, H, W)
@@ -388,9 +389,9 @@ class Trainer:
                     elif self.step == self.warmup_steps:
                         for param_group in self.opt.param_groups:
                             param_group['lr'] = self.lr
-                        print(f"Warmup complete at step {step}")
+                        print(f"Warmup complete at step {self.step}")
 
-                    elif step > self.warmup_steps and self.lr_scheduler is not None:
+                    elif self.step > self.warmup_steps and self.lr_scheduler is not None:
                         if not isinstance(self.lr_scheduler, ReduceLROnPlateau):
                             self.lr_scheduler.step()
 
@@ -409,14 +410,14 @@ class Trainer:
 
                     # Log training info to wandb
                     if self.wb_run is not None:
-                        wandb.log({"step": step,
+                        wandb.log({"step": self.step,
                                    "learning_rate": current_lr,
                                    "training_loss": current_loss,
                                    #"ema_loss": self.ema_val_loss
                         })
 
                     # Save checkpoint #
-                    if step % self.save_every == 0:
+                    if self.step % self.save_every == 0 and self.step != 0:
                         # Average loss over checkpoint window
                         avg_loss = np.mean(checkpoint_losses)
                         checkpoint_losses = [] 
@@ -439,7 +440,7 @@ class Trainer:
 
                         # Checkpoint saving
                         self.save_checkpoint(avg_loss=avg_loss)
-                        print(f"Step [{step}/{self.epochs*len(self.loader)}] - Checkpoint saved\n")
+                        print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
 
                         if self.wb_run is not None:
                             wandb.log({"val_loss": self.val_loss if self.val_loss is not None else -1,
@@ -448,5 +449,8 @@ class Trainer:
                                        "best_ema_val_loss": self.best_ema_val_loss if self.ema_val_loss is not None else -1,
                                        "avg_loss": avg_loss
                             })
+                    
+                    # Increment step counter
+                    self.step += 1
         pbar.close()
                     

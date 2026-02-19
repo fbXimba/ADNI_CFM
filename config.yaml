@@ -5,7 +5,7 @@ directories:
 parameters:
   epochs: 1000
   batch_size: 4 # 8, 16 
-  num_workers: 4
+  num_workers: 0
   input_size: 128
   num_channels: 64
   num_res_blocks: 2
