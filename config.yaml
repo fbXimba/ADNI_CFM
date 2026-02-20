@@ -3,8 +3,8 @@ directories:
   validation_dataset_dir: "../ADNI_validation_dataset/"
   results_dir: "./results_CFM_ADNI"
 parameters:
-  epochs: 1000
-  batch_size: 4 # 8, 16 
+  epochs: 400
+  batch_size: 8 #4, 8, 16 
   num_workers: 0
   input_size: 128
   num_channels: 64

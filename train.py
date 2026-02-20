@@ -5,12 +5,7 @@ CFM Training Script for ADNI Dataset
 # TODO: create proper enviroment temp: env-tesi, epochs nomenclature used improperly? check training loop
 # NOTE: if lr shedule = ReduceLROnPlateau need validation set for validation loss for scheduler step
 
-# num_channels da 64 a 32
-# checkpoint true?
-# image size 64 ivece di 128
-# channel mult guardare: ora usa defaul a 128 (1,1,2,3,4)
-
-#TODO: try diff num_workers=0,2,4 diff batch size 4,8,16
+# TODO: try diff num_workers=0,2,4 diff batch size 4,8,16
 
 # Libraries
 import os
@@ -113,7 +108,7 @@ if os.path.exists(args.validation_dataset_dir):
         batch_size=args.batch_size,
         shuffle=False, # False for fixed seeds
         num_workers=args.num_workers,
-        pin_memory=True,
+        pin_memory=False, # NOTE: try with False for memory issues at checpoint/validation
         #persistent_workers = True,
         drop_last = False # Flse for fixed seeds because shuffle False 
     )

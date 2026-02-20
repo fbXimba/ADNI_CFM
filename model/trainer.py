@@ -16,6 +16,8 @@ from tqdm.auto import tqdm
 # see eq. 10 and th. 3.2 is it okay to alse use abs diff? and consequently le also?
 # looks like not: mse baset ot , loss during training le should be best bus see l1 smooth and t dependence commented out
 
+# NOTE: no gradient accumalation instead of per image in batch for greater numerical stability and it wouldn't change much
+
 class Trainer:
     def __init__(
         self,
@@ -24,7 +26,7 @@ class Trainer:
         val_loader,
         device: str = "cuda",
         batch_size: int = 4,
-        epochs: int = 10,
+        epochs: int = 1000,
         lr: float = 2e-4,
         loss_type: str = "le",
         scheduler_type: str = None,
@@ -37,7 +39,7 @@ class Trainer:
         save_every: int = 100,
         wb_run: str = None,
         use_ema: bool = True,
-        ema_decay: float = 0.9999,
+        ema_decay: float = 0.995,
         update_ema_every: int = 100,
         grad_norm: float = 1.0,
         val_seeds: list = [42, 135, 654]
@@ -51,7 +53,7 @@ class Trainer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.step = 0
-        self.tot_steps = self.epochs * len(self.loader) * self.batch_size
+        self.tot_steps = self.epochs * len(self.loader) * self.batch_size 
         
         self.lr = lr
         self.scheduler_type = scheduler_type
@@ -165,91 +167,94 @@ class Trainer:
             for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()):
                 ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
     
+    @torch.inference_mode() # no grad + eval for layers like dropout, batchnorm
     def validate(self):
         """Compute validation loss with multiple fixed seeds for reproducibility and reduced bias"""
 
-        self.model.eval() # keep but useless with torch.inference_mode(), old combo eval mode + no grad
-        seed_losses = []  # Store average loss for each seed
+        seed_val_losses = []  # Store average loss for each seed
 
         # Run validation with multiple seeds
         for seed in self.val_seeds:
             # Set seed for reproducible validation
             torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
             np.random.seed(seed)
             
-            seed_val_losses = []
-            
-            with torch.inference_mode(): # no grad + eval for layers like dropout, batchnorm
-                for batch in self.val_loader:
-                    batch = self.move_to_device(batch)
-                    
-                    image = batch['image']
-                    mask = batch['mask']
-                    diagnosis = batch['diagnosis']
-                    
-                    # Sample noise and compute validation loss
-                    x0 = torch.randn_like(image)
-                    t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
-                    
-                    vt = self.model(torch.cat([xt, mask], dim=1), t, y1)
-                    
-                    loss = self.compute_loss(ut, vt)
-                    seed_val_losses.append(loss.item())
-            
-            # Store average loss for this seed
-            seed_losses.append(np.mean(seed_val_losses))
+            for batch in self.val_loader:
+                #batch = self.move_to_device(batch)
                 
-        self.model.train()
+                image = batch['image']
+                mask = batch['mask']
+                diagnosis = batch['diagnosis']
+                
+                # Sample noise and compute validation loss
+                x0 = torch.randn_like(image)
+
+                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
+                    t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    y1_i = y1_i.unsqueeze(0).to(self.device, non_blocking = True) 
+                    mask_i = mask_i.unsqueeze(0).to(self.device, non_blocking = True)
+
+                    vt = self.model(torch.cat([xt_i, mask_i], dim=1), t_i, y1_i )
+
+                    loss = self.compute_loss(ut_i, vt)
+                    seed_val_losses.append(loss.item())
+        
+        # Store average loss for this seed
+        avg_seed_loss = np.mean(seed_val_losses)
+                
         # Return mean across all seeds for more robust validation metric
-        avg_val_loss = np.mean(seed_losses)
-        return avg_val_loss
+        return avg_seed_loss
     
+    @torch.inference_mode()
     def validate_ema(self):
         """Compute validation loss with EMA model using multiple fixed seeds for reproducibility"""
-        
-        self.ema_model.eval()
-        all_seed_losses = []  # Store average loss for each seed
+
+        seed_val_losses = []
         
         # Run validation with multiple seeds
         for seed in self.val_seeds:
             # Set seed for reproducible validation
             torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
             np.random.seed(seed)
-            
-            seed_val_losses = []
-            
-            with torch.inference_mode():
-                for batch in self.val_loader:
-                    batch = self.move_to_device(batch)
+
+            for batch in self.val_loader:
+                
+                image = batch['image']
+                mask = batch['mask']
+                diagnosis = batch['diagnosis']
+                
+                # Sample noise and compute validation loss with EMA model
+                x0 = torch.randn_like(image)
+                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
+                    t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    y1_i = y1_i.unsqueeze(0).to(self.device, non_blocking = True) 
+                    mask_i = mask_i.unsqueeze(0).to(self.device, non_blocking = True)
+
+                    vt = self.model(torch.cat([xt_i, mask_i], dim=1), t_i, y1_i )
                     
-                    image = batch['image']
-                    mask = batch['mask']
-                    diagnosis = batch['diagnosis']
-                    
-                    # Sample noise and compute validation loss with EMA model
-                    x0 = torch.randn_like(image)
-                    t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
-                    
-                    vt = self.ema_model(torch.cat([xt, mask], dim=1), t, y1)
-                    
-                    loss = self.compute_loss(ut, vt)
+                    loss = self.compute_loss(ut_i, vt)
                     seed_val_losses.append(loss.item())
             
-            # Store average loss for this seed
-            all_seed_losses.append(np.mean(seed_val_losses))
-        
+        # Store average loss for this seed
+        avg_seed_loss = np.mean(seed_val_losses)
+    
         # Return mean across all seeds for more robust validation metric
-        return np.mean(all_seed_losses)
+        return avg_seed_loss
+    
     
     def save_checkpoint(self, avg_loss=None):
         """
         Save model checkpoint
         Args:
         -----
-            save_dir: directory
-                where to save checkpoint
             avg_loss: float
                 current average loss value
         """
@@ -258,13 +263,21 @@ class Trainer:
             'model': self.model.state_dict(),
             'optimizer': self.opt.state_dict(),
             'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
-            'ema_model': self.ema_model.state_dict() if self.ema_model is not None else None,
+            'ema_model': self.ema_model.state_dict() if self.use_ema else None,
             'val_loss': self.val_loss,
             'avg_loss': avg_loss,
             'ema_val_loss': self.ema_val_loss,
         }
 
-        path = f"{self.results_dir}/checkpoint_{self.step}.pt"
+        # Move all tensors in state dicts to CPU
+        for key in ['model', 'optimizer', 'lr_scheduler', 'ema_model']:
+            if checkpoint[key] is not None:
+                checkpoint[key] = {
+                    k: v.cpu() if isinstance(v, torch.Tensor) else v
+                    for k, v in checkpoint[key].items()
+                }
+
+        path = f"{self.results_dir}/checkpoint_{self.step//self.save_every}.pt"
         torch.save(checkpoint, path)
         print(f"Checkpoint {self.step} saved: {path}")
 
@@ -329,9 +342,9 @@ class Trainer:
         
         os.makedirs(self.results_dir, exist_ok=True)
 
-        pbar = tqdm(total=self.epochs*len(self.loader), desc="Training", unit="step")
+        pbar = tqdm(total=self.tot_steps, desc="Training", unit="step")
         
-        self.model.train()
+        self.model.train() # set model to training mode for layers like dropout, batchnorm
          
         checkpoint_losses = [] # windowed: reset after each checkpoint
 
@@ -368,12 +381,15 @@ class Trainer:
                     # Compute MSE loss between predicted and target velocity
                     loss = self.compute_loss(ut_i, vt_i)
 
-                    # Optimization step
-                    self.opt.zero_grad()
+                    # Backpropagation and optimization ##only backprop for cmulative alternative
+                    self.opt.zero_grad() 
                     loss.backward()
+
                     # gradient clipping
                     if self.grad_norm is not None:
                         clip_grad_norm_(self.model.parameters(), max_norm=self.grad_norm)
+
+                    # Optimization step    
                     self.opt.step()
                 
                     # Update EMA model
@@ -425,32 +441,36 @@ class Trainer:
                         # Validation loss: if validation set provided
                         if self.val_loader is not None:
                             self.val_loss = self.validate()
-                            if self.use_ema:
-                                self.ema_val_loss = self.validate_ema()
-
-                            # Update best validation loss
-                            if self.val_loss is not None and self.val_loss < self.best_val_loss:
-                                self.best_val_loss = self.val_loss
-                            if self.ema_val_loss is not None and self.ema_val_loss < self.best_ema_val_loss:
-                                self.best_ema_val_loss = self.ema_val_loss
 
                             # Step ReduceLROnPlateau with validation loss
                             if isinstance(self.lr_scheduler, ReduceLROnPlateau):
                                 self.lr_scheduler.step(self.val_loss)
 
+                        if self.use_ema and self.val_loader is not None:
+                            self.ema_val_loss = self.validate_ema()
+
+                        # Update best validation loss
+                        if self.val_loss is not None and self.val_loss < self.best_val_loss:
+                            self.best_val_loss = self.val_loss
+
+                        if self.ema_val_loss is not None and self.ema_val_loss < self.best_ema_val_loss:
+                            self.best_ema_val_loss = self.ema_val_loss
+                        
+                        self.model.train() # set model to training mode for layers like dropout, batchnorm after validation
+
                         # Checkpoint saving
                         self.save_checkpoint(avg_loss=avg_loss)
                         print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
 
-                        if self.wb_run is not None:
-                            wandb.log({"val_loss": self.val_loss if self.val_loss is not None else -1,
-                                       "ema_val_loss": self.ema_val_loss if self.ema_val_loss is not None else -1,
-                                       "best_val_loss": self.best_val_loss if self.val_loss is not None else -1,
-                                       "best_ema_val_loss": self.best_ema_val_loss if self.ema_val_loss is not None else -1,
+                        if self.wb_run is not None: 
+                            wandb.log({"val_loss": self.val_loss,# values can be None, run won't fail
+                                       "ema_val_loss": self.ema_val_loss,
+                                       "best_val_loss": self.best_val_loss,
+                                       "best_ema_val_loss": self.best_ema_val_loss,
                                        "avg_loss": avg_loss
                             })
                     
                     # Increment step counter
                     self.step += 1
         pbar.close()
-                    
+
