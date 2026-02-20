@@ -138,33 +138,17 @@ class Trainer:
             raise NotImplementedError()
         
         return loss
-
-    def move_to_device(self, batch):
-        """
-        Move all tensors in the batch to the specified device (CPU/GPU)
-        Args:
-        -----
-            batch : dictionary
-                dictionary containing tensors = values
-        Returns:
-        --------
-            dict : dictionary
-                dictionary with tensors moved to the target device 
-        """
-        return {
-            k: v.to(self.device, non_blocking=True) 
-            for k, v in batch.items()
-        }
     
     def update_ema(self):
-        """Update EMA model weights with exponential moving average"""
-
-        if not self.use_ema:
-            return
+        """Update EMA model weights with exponential moving average
+            ema_p_new = ema_decay * ema_p_old + (alpha = 1 - ema_decay) * model_p_current"""
         
+        ## Move EMA model to CPU for memory efficiency during update
+        #self.ema_model.cpu()
+
         # Update EMA parameters
         with torch.no_grad():
-            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()):
+            for ema_p, model_p in zip(self.ema_model.parameters(), self.model.parameters()): # paired ema and model parameters
                 ema_p.data.mul_(self.ema_decay).add_(model_p.data, alpha=1 - self.ema_decay)
     
     @torch.inference_mode() # no grad + eval for layers like dropout, batchnorm
@@ -202,10 +186,16 @@ class Trainer:
 
                     loss = self.compute_loss(ut_i, vt)
                     seed_val_losses.append(loss.item())
+
+                    # Explicit tensor cleanup for memory efficiency
+                    del t_i, xt_i, ut_i, y1_i, mask_i, vt
         
         # Store average loss for this seed
         avg_seed_loss = np.mean(seed_val_losses)
-                
+
+        # Explicitly clear CUDA cache after validation to free up memory for training
+        torch.cuda.empty_cache()
+       
         # Return mean across all seeds for more robust validation metric
         return avg_seed_loss
     
@@ -242,9 +232,15 @@ class Trainer:
                     
                     loss = self.compute_loss(ut_i, vt)
                     seed_val_losses.append(loss.item())
+
+                    # Explicit tensor cleanup for memory efficiency
+                    del t_i, xt_i, ut_i, y1_i, mask_i, vt
             
         # Store average loss for this seed
         avg_seed_loss = np.mean(seed_val_losses)
+
+        # Explicitly clear CUDA cache after validation to free up memory for training
+        torch.cuda.empty_cache()
     
         # Return mean across all seeds for more robust validation metric
         return avg_seed_loss
@@ -351,8 +347,6 @@ class Trainer:
         for epoch in range(self.epochs):
             for i, batch in enumerate(self.loader):
 
-                #batch = self.move_to_device(batch) # moved inside CPU for memory efficiency
-
                 image = batch["image"]        # (B, 1, D, H, W)
                 mask = batch["mask"]          # (B, 1, D, H, W)
                 diagnosis = batch["diagnosis"]  # (B,)
@@ -394,7 +388,8 @@ class Trainer:
                 
                     # Update EMA model
                     if self.step % self.update_ema_every == 0:
-                        self.update_ema()
+                        if self.use_ema:
+                            self.update_ema()
 
                     # linear warmup and lr scheduling if/which applied
                     if self.step < self.warmup_steps:
@@ -472,5 +467,6 @@ class Trainer:
                     
                     # Increment step counter
                     self.step += 1
+
         pbar.close()
 

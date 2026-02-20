@@ -116,9 +116,6 @@ if os.path.exists(args.validation_dataset_dir):
 #check 
 batch = next(iter(loader))
 
-#for k, v in batch.items(): # print batch keys and tensor shapes
-#    print(k, v.shape, v.dtype)
-
 # device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
