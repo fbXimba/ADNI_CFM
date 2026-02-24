@@ -128,7 +128,7 @@ class Trainer:
         elif self.loss_type == 'l2': # mean squared error
             loss = F.mse_loss(vt, ut)
         elif self.loss_type == 'le': # weighted sum of l1 and l2 with fixed coefficients
-            loss_l1 = (ut - vt).abs().mean() # variante smooth/huber loss : F.smooth_l1_loss(vt, ut, beta=0.05)
+            loss_l1 = torch.mean(torch.abs(ut - vt)) # variante smooth/huber loss : F.smooth_l1_loss(vt, ut, beta=0.05)
             loss_l2 = F.mse_loss(vt, ut)
             loss = 0.3 * loss_l1 + 0.7 * loss_l2 # weighted sum coefficients to evaluate
             # lambda_t = 0.05 * t**2 
@@ -155,6 +155,8 @@ class Trainer:
     def validate(self):
         """Compute validation loss with multiple fixed seeds for reproducibility and reduced bias"""
 
+        self.model.eval()
+
         seed_val_losses = []  # Store average loss for each seed
 
         # Run validation with multiple seeds
@@ -176,11 +178,11 @@ class Trainer:
                 t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
                 
                 for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
-                    t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    y1_i = y1_i.unsqueeze(0).to(self.device, non_blocking = True) 
-                    mask_i = mask_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    t_i = t_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    xt_i = xt_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    ut_i = ut_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    y1_i = y1_i.unsqueeze(0).to(self.device)#, non_blocking = True) 
+                    mask_i = mask_i.unsqueeze(0).to(self.device)#, non_blocking = True)
 
                     vt = self.model(torch.cat([xt_i, mask_i], dim=1), t_i, y1_i )
 
@@ -188,12 +190,13 @@ class Trainer:
                     seed_val_losses.append(loss.item())
 
                     # Explicit tensor cleanup for memory efficiency
-                    del t_i, xt_i, ut_i, y1_i, mask_i, vt
+                    del t_i, xt_i, ut_i, y1_i, mask_i, vt, loss
         
         # Store average loss for this seed
         avg_seed_loss = np.mean(seed_val_losses)
 
         # Explicitly clear CUDA cache after validation to free up memory for training
+        del t, xt, ut, y1, image, mask, diagnosis
         torch.cuda.empty_cache()
        
         # Return mean across all seeds for more robust validation metric
@@ -202,6 +205,7 @@ class Trainer:
     @torch.inference_mode()
     def validate_ema(self):
         """Compute validation loss with EMA model using multiple fixed seeds for reproducibility"""
+        self.ema_model.eval()
 
         seed_val_losses = []
         
@@ -222,24 +226,25 @@ class Trainer:
                 t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
                 
                 for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
-                    t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
-                    y1_i = y1_i.unsqueeze(0).to(self.device, non_blocking = True) 
-                    mask_i = mask_i.unsqueeze(0).to(self.device, non_blocking = True)
+                    t_i = t_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    xt_i = xt_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    ut_i = ut_i.unsqueeze(0).to(self.device)#, non_blocking = True)
+                    y1_i = y1_i.unsqueeze(0).to(self.device)#, non_blocking = True) 
+                    mask_i = mask_i.unsqueeze(0).to(self.device)#, non_blocking = True)
 
-                    vt = self.model(torch.cat([xt_i, mask_i], dim=1), t_i, y1_i )
+                    vt = self.ema_model(torch.cat([xt_i, mask_i], dim=1), t_i, y1_i )
                     
                     loss = self.compute_loss(ut_i, vt)
                     seed_val_losses.append(loss.item())
 
                     # Explicit tensor cleanup for memory efficiency
-                    del t_i, xt_i, ut_i, y1_i, mask_i, vt
+                    del t_i, xt_i, ut_i, y1_i, mask_i, vt, loss
             
         # Store average loss for this seed
         avg_seed_loss = np.mean(seed_val_losses)
 
         # Explicitly clear CUDA cache after validation to free up memory for training
+        del t, xt, ut, y1, image, mask, diagnosis
         torch.cuda.empty_cache()
     
         # Return mean across all seeds for more robust validation metric
@@ -254,28 +259,55 @@ class Trainer:
             avg_loss: float
                 current average loss value
         """
+        #checkpoint = {
+        #    'step': self.step,
+        #    'model': self.model.state_dict(),
+        #    'optimizer': self.opt.state_dict(),
+        #    'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
+        #    'ema_model': self.ema_model.state_dict() if self.use_ema else None,
+        #    'val_loss': self.val_loss,
+        #    'avg_loss': avg_loss,
+        #    'ema_val_loss': self.ema_val_loss,
+        #}
+        ## Move all tensors in state dicts to CPU
+        #for key in ['model', 'optimizer', 'lr_scheduler', 'ema_model']:
+        #    if checkpoint[key] is not None:
+        #        checkpoint[key] = {
+        #            k: v.cpu() if isinstance(v, torch.Tensor) else v
+        #            for k, v in checkpoint[key].items()
+        #        }
+
+        def to_cpu(obj):
+            """Recursively move tensors in nested dicts/lists to CPU"""
+
+            if isinstance(obj, torch.Tensor):
+                return obj.detach().cpu().clone()  # .detach() per sicurezza extra
+            elif isinstance(obj, dict):
+                return {k: to_cpu(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(to_cpu(v) for v in obj)
+            else:
+                return obj
+
+
         checkpoint = {
             'step': self.step,
-            'model': self.model.state_dict(),
-            'optimizer': self.opt.state_dict(),
-            'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
-            'ema_model': self.ema_model.state_dict() if self.use_ema else None,
+            'model': to_cpu(self.model.state_dict()),
+            'optimizer': to_cpu(self.opt.state_dict()),
+            'lr_scheduler': to_cpu(self.lr_scheduler.state_dict()) if self.lr_scheduler else None,
+            'ema_model': to_cpu(self.ema_model.state_dict()) if (self.use_ema and self.ema_model) else None,
             'val_loss': self.val_loss,
             'avg_loss': avg_loss,
             'ema_val_loss': self.ema_val_loss,
         }
 
-        # Move all tensors in state dicts to CPU
-        for key in ['model', 'optimizer', 'lr_scheduler', 'ema_model']:
-            if checkpoint[key] is not None:
-                checkpoint[key] = {
-                    k: v.cpu() if isinstance(v, torch.Tensor) else v
-                    for k, v in checkpoint[key].items()
-                }
-
         path = f"{self.results_dir}/checkpoint_{self.step//self.save_every}.pt"
         torch.save(checkpoint, path)
         print(f"Checkpoint {self.step} saved: {path}")
+
+        # Explicit cleanup to free memory after saving checkpoint
+        del checkpoint
+        torch.cuda.empty_cache()
 
     def load_checkpoint(self, checkpoint_path):
         """Load checkpoint and restore training state
@@ -429,44 +461,48 @@ class Trainer:
 
                     # Save checkpoint #
                     if self.step % self.save_every == 0 and self.step != 0:
-                        # Average loss over checkpoint window
-                        avg_loss = np.mean(checkpoint_losses)
-                        checkpoint_losses = [] 
+                        with torch.no_grad():
 
-                        # Validation loss: if validation set provided
-                        if self.val_loader is not None:
-                            self.val_loss = self.validate()
+                            # Average loss over checkpoint window
+                            avg_loss = np.mean(checkpoint_losses)
+                            checkpoint_losses = [] 
 
-                            # Step ReduceLROnPlateau with validation loss
-                            if isinstance(self.lr_scheduler, ReduceLROnPlateau):
-                                self.lr_scheduler.step(self.val_loss)
+                            # Validation loss: if validation set provided
+                            if self.val_loader is not None:
+                                self.val_loss = self.validate()
 
-                        if self.use_ema and self.val_loader is not None:
-                            self.ema_val_loss = self.validate_ema()
+                                # Step ReduceLROnPlateau with validation loss
+                                if isinstance(self.lr_scheduler, ReduceLROnPlateau):
+                                    self.lr_scheduler.step(self.val_loss)
 
-                        # Update best validation loss
-                        if self.val_loss is not None and self.val_loss < self.best_val_loss:
-                            self.best_val_loss = self.val_loss
+                            if self.use_ema and self.val_loader is not None:
+                                self.ema_val_loss = self.validate_ema()
 
-                        if self.ema_val_loss is not None and self.ema_val_loss < self.best_ema_val_loss:
-                            self.best_ema_val_loss = self.ema_val_loss
-                        
-                        self.model.train() # set model to training mode for layers like dropout, batchnorm after validation
+                            # Update best validation loss
+                            if self.val_loss is not None and self.val_loss < self.best_val_loss:
+                                self.best_val_loss = self.val_loss
 
-                        # Checkpoint saving
-                        self.save_checkpoint(avg_loss=avg_loss)
-                        print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
+                            if self.ema_val_loss is not None and self.ema_val_loss < self.best_ema_val_loss:
+                                self.best_ema_val_loss = self.ema_val_loss
 
-                        if self.wb_run is not None: 
-                            wandb.log({"val_loss": self.val_loss,# values can be None, run won't fail
-                                       "ema_val_loss": self.ema_val_loss,
-                                       "best_val_loss": self.best_val_loss,
-                                       "best_ema_val_loss": self.best_ema_val_loss,
-                                       "avg_loss": avg_loss
-                            })
+                            # Checkpoint saving
+                            self.save_checkpoint(avg_loss=avg_loss)
+                            print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
+
+                            if self.wb_run is not None: 
+                                wandb.log({"val_loss": self.val_loss,# values can be None, run won't fail
+                                           "ema_val_loss": self.ema_val_loss,
+                                           "best_val_loss": self.best_val_loss,
+                                           "best_ema_val_loss": self.best_ema_val_loss,
+                                           "avg_loss": avg_loss
+                                })
                     
                     # Increment step counter
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
                     self.step += 1
+
+                    self.model.train() # set model to training mode for layers like dropout, batchnorm after validation
 
         pbar.close()
 

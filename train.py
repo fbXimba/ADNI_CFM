@@ -11,6 +11,7 @@ CFM Training Script for ADNI Dataset
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
 os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
+os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
 
 import argparse
 import numpy as np
@@ -86,6 +87,9 @@ if args.key is not None:
 else:
     print("Wandb key file not found: proceeding without wandb logging.")
 
+# TODO: CHECK for ReduceLROnPlateau scheduler need validation set for validation loss for scheduler step
+
+# TODO: CHECK dataset in input 
 
 # Dataset and DataLoader
 dataset = ADNIDataset(args.dataset_dir, split="train") # from dataset.py
