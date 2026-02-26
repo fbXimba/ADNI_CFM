@@ -84,7 +84,7 @@ class Trainer:
 
         # Learning rate scheduler
         if self.scheduler_type == "cos":
-            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.epochs*len(self.loader) - self.warmup_steps, eta_min=self.lr_min)
+            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.epochs*len(self.loader)*batch_size - self.warmup_steps, eta_min=self.lr_min)
         elif self.scheduler_type == "exp":
             self.gamma_decay = gamma_decay
             self.lr_scheduler = ExponentialLR(self.opt, gamma=self.gamma_decay)
@@ -259,23 +259,6 @@ class Trainer:
             avg_loss: float
                 current average loss value
         """
-        #checkpoint = {
-        #    'step': self.step,
-        #    'model': self.model.state_dict(),
-        #    'optimizer': self.opt.state_dict(),
-        #    'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
-        #    'ema_model': self.ema_model.state_dict() if self.use_ema else None,
-        #    'val_loss': self.val_loss,
-        #    'avg_loss': avg_loss,
-        #    'ema_val_loss': self.ema_val_loss,
-        #}
-        ## Move all tensors in state dicts to CPU
-        #for key in ['model', 'optimizer', 'lr_scheduler', 'ema_model']:
-        #    if checkpoint[key] is not None:
-        #        checkpoint[key] = {
-        #            k: v.cpu() if isinstance(v, torch.Tensor) else v
-        #            for k, v in checkpoint[key].items()
-        #        }
 
         def to_cpu(obj):
             """Recursively move tensors in nested dicts/lists to CPU"""
@@ -498,9 +481,11 @@ class Trainer:
                                 })
                     
                     # Increment step counter
+                    self.step += 1
+
+                    # Explicit cleanup to free memory after each step
                     torch.cuda.synchronize()
                     torch.cuda.empty_cache()
-                    self.step += 1
 
                     self.model.train() # set model to training mode for layers like dropout, batchnorm after validation
 
