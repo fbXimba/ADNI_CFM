@@ -1,7 +1,11 @@
 directories:
   dataset_dir: "../ADNI_train_dataset/"
   validation_dataset_dir: "../ADNI_validation_dataset/"
+  test_dataset_dir: "../ADNI_test_dataset/"
   results_dir: "./results_CFM_ADNI"
+  gen_samples_dir: "./gen_samples_CFM_ADNI"
+  checkpoints_dir: "./checkpoints_CFM_ADNI/20260226_113429"
+
 parameters:
   epochs: 400
   batch_size: 8 #4, 8, 16 
@@ -26,5 +30,14 @@ parameters:
   ema_decay: 0.995
   grad_norm: 1.0 
   val_seeds: [42, 135, 654]
+
+sampling:
+  num_samples: 5
+  label: "CN"
+  seed: 26
+  checkpoint: 160
+  ema: True
+  mask_id: None
+
 wandb:
-  key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d
+  key: None

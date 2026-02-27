@@ -125,8 +125,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Model
-in_channels = 2 # mask + noise image when conditioned
-out_channels = 1 # only one channel = one output velocity field
+#in_channels = 2 # mask + noise image when conditioned
+#out_channels = 1 # only one channel = one output velocity field
 
 model = create_model(
    args.input_size, 
@@ -134,8 +134,8 @@ model = create_model(
    args.num_res_blocks, 
    #channel_mult=?, # default is 128, (1,1,2,3,4) in create_model in unet_ADNI.py
    class_cond=True, # condition on diagnosis
-   in_channels=in_channels, 
-   out_channels=out_channels,
+   in_channels=args.in_channels, 
+   out_channels=args.out_channels,
    num_classes=args.num_classes # specify number of classes
    ).to(device)
 

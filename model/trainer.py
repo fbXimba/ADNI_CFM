@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 # Trainer class for CFM model training
 # NOTE: .sample_location_and_conditional_flow in torchcfm/guided_conditional_flow_matching.py lines 274-...
 
-#NOTE: careful with loss type see Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport
+# NOTE: careful with loss type see Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport
 # see eq. 10 and th. 3.2 is it okay to alse use abs diff? and consequently le also?
 # looks like not: mse baset ot , loss during training le should be best bus see l1 smooth and t dependence commented out
 
@@ -53,7 +53,7 @@ class Trainer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.step = 0
-        self.tot_steps = self.epochs * len(self.loader) * self.batch_size 
+        self.tot_steps = self.epochs * len(self.loader) * self.batch_size #able to write like this due to drop_last = True in dataloader, making len(loader) constant
         
         self.lr = lr
         self.scheduler_type = scheduler_type
@@ -84,7 +84,7 @@ class Trainer:
 
         # Learning rate scheduler
         if self.scheduler_type == "cos":
-            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.epochs*len(self.loader)*batch_size - self.warmup_steps, eta_min=self.lr_min)
+            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.tot_steps - self.warmup_steps, eta_min=self.lr_min)
         elif self.scheduler_type == "exp":
             self.gamma_decay = gamma_decay
             self.lr_scheduler = ExponentialLR(self.opt, gamma=self.gamma_decay)
@@ -284,7 +284,7 @@ class Trainer:
             'ema_val_loss': self.ema_val_loss,
         }
 
-        path = f"{self.results_dir}/checkpoint_{self.step//self.save_every}.pt"
+        path = (f"{self.results_dir}/checkpoint_{self.step//self.save_every}.pt" if self.step != self.tot_steps - 1 else f"{self.results_dir}/checkpoint_final.pt")
         torch.save(checkpoint, path)
         print(f"Checkpoint {self.step} saved: {path}")
 
@@ -443,7 +443,7 @@ class Trainer:
                         })
 
                     # Save checkpoint #
-                    if self.step % self.save_every == 0 and self.step != 0:
+                    if self.step % self.save_every == 0 and self.step != 0 or self.step == self.tot_steps - 1:
                         with torch.no_grad():
 
                             # Average loss over checkpoint window
