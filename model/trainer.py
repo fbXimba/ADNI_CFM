@@ -484,8 +484,8 @@ class Trainer:
                     self.step += 1
 
                     # Explicit cleanup to free memory after each step
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
+                    #torch.cuda.synchronize()
+                    #torch.cuda.empty_cache()
 
                     self.model.train() # set model to training mode for layers like dropout, batchnorm after validation
 

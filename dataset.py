@@ -49,7 +49,7 @@ class ADNIDataset(Dataset):
         )  # scalar
 
         return {
-            "Subject": id,
+            #"Subject": id,
             "image": image,
             "mask": mask,
             "diagnosis": diagnosis

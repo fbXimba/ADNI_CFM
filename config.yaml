@@ -37,7 +37,7 @@ sampling:
   seed: 26
   checkpoint: 160
   ema: True
-  mask_id: None
+  mask_id:
 
 wandb:
-  key: None
+  key:
