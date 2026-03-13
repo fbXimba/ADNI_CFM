@@ -35,6 +35,19 @@ args = parser.parse_args()
 
 print("NOTE: assuming parameters correspond to the trained model chosen!!")
 
+# dictionary with label mapping for filename generation
+idx_to_label = {
+    0: "CN",
+    1: "MCI",
+    2: "AD"
+}
+
+label_to_idx = {
+    "CN": 0,
+    "MCI": 1,
+    "AD": 2
+}
+
 ###############################################################################
 
 def load_mask_with_affine(mask_path):
@@ -167,9 +180,19 @@ def generate_sample(model, noise, mask, diagnosis, device):
     """
 
     with torch.no_grad():
+        # Keep mask and diagnosis packed together in a single conditioning tensor for OT alignement
+        B = mask.shape[0]
+        diagnosis_scalar = diagnosis.view(B, -1)[:, :1]
+        diagnosis_map = diagnosis_scalar.to(mask.dtype).view(B, 1, 1, 1, 1).expand(-1, 1, *mask.shape[2:])
+        cond = torch.cat([mask, diagnosis_map], dim=1)
+
+        # Recover conditioning components from packed tensor
+        mask_cond = cond[:, :1]
+        diagnosis_cond = cond[:, 1, 0, 0, 0].to(diagnosis.dtype)
+
         # Solve ODE to generate sample: noise evolves and mask stays constant
         traj = torchdiffeq.odeint( 
-            lambda t, x: model(torch.cat([x, mask], dim=1), t.reshape(-1), diagnosis), # concatenate evolving x with fixed mask
+            lambda t, x: model(torch.cat([x, mask_cond], dim=1), t.reshape(-1), diagnosis_cond), # concatenate evolving x with fixed mask
             noise, # initial condition (t=0)
             torch.linspace(0, 1, 2, device=device), # time points to solve for: from t=0 (noise) to t=1 (generated sample)
             atol=1e-4, # absolute tolerance: smaller values = more accurate but slower
@@ -224,7 +247,7 @@ def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, se
         generated_sample = generate_sample(model, noise, mask, diagnosis, device)
 
         # Save generated sample with correct affine matrix
-        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{target_label}_{seed_i}.nii.gz")
+        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{idx_to_label[target_label]}_{seed_i}.nii.gz")
         nib.save(nib.Nifti1Image(generated_sample.squeeze().cpu().numpy(), affine=affine), save_path)
         print(f"Saved: {save_path}")
 
@@ -285,7 +308,7 @@ def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, d
         generated_sample = generate_sample(model, noise, mask, diagnosis, device)
 
         # Save generated sample with correct affine matrix
-        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{target_label}_{seed_i}.nii.gz")
+        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{idx_to_label[target_label]}_{seed_i}.nii.gz")
         nib.save(nib.Nifti1Image(generated_sample.squeeze().cpu().numpy(), affine=affine), save_path)
         print(f"Saved: {save_path}")
 
@@ -303,8 +326,7 @@ os.makedirs(sample_dir, exist_ok=True)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Target diagnosis label for generation
-label_map = {"CN": 0, "MCI": 1, "AD": 2}
-target_label = label_map[args.label] # integer label for conditional generation
+target_label = label_to_idx[args.label] # integer label for conditional generation
 
 # Load trained model
 model = load_trained_model(args.checkpoints_dir, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)

@@ -175,9 +175,17 @@ class Trainer:
                 # Sample noise and compute validation loss
                 x0 = torch.randn_like(image)
 
-                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                # Keep mask and diagnosis aligned with OT permutation by packing both into y1
+                B = image.shape[0]
+                diagnosis_scalar = diagnosis.view(B, -1)[:, :1]
+                diagnosis_map = diagnosis_scalar.to(mask.dtype).view(B, 1, 1, 1, 1).expand(-1, 1, *mask.shape[2:])
+                cond = torch.cat([mask, diagnosis_map], dim=1)
+
+                t, xt, ut, _, cond_ot = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=cond)
+                mask_ot = cond_ot[:, :1]
+                diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype)
                 
-                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot): 
                     t_i = t_i.unsqueeze(0).to(self.device)#, non_blocking = True)
                     xt_i = xt_i.unsqueeze(0).to(self.device)#, non_blocking = True)
                     ut_i = ut_i.unsqueeze(0).to(self.device)#, non_blocking = True)
@@ -196,7 +204,7 @@ class Trainer:
         avg_seed_loss = np.mean(seed_val_losses)
 
         # Explicitly clear CUDA cache after validation to free up memory for training
-        del t, xt, ut, y1, image, mask, diagnosis
+        del t, xt, ut, cond_ot, mask_ot, diagnosis_ot, image, mask, diagnosis
         torch.cuda.empty_cache()
        
         # Return mean across all seeds for more robust validation metric
@@ -223,9 +231,17 @@ class Trainer:
                 
                 # Sample noise and compute validation loss with EMA model
                 x0 = torch.randn_like(image)
-                t, xt, ut, _, y1 = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                # Keep mask and diagnosis aligned with OT permutation by packing both into y1
+                B = image.shape[0]
+                diagnosis_scalar = diagnosis.view(B, -1)[:, :1]
+                diagnosis_map = diagnosis_scalar.to(mask.dtype).view(B, 1, 1, 1, 1).expand(-1, 1, *mask.shape[2:])
+                cond = torch.cat([mask, diagnosis_map], dim=1)
+
+                t, xt, ut, _, cond_ot = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=cond)
+                mask_ot = cond_ot[:, :1]
+                diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype)
                 
-                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot): 
                     t_i = t_i.unsqueeze(0).to(self.device)#, non_blocking = True)
                     xt_i = xt_i.unsqueeze(0).to(self.device)#, non_blocking = True)
                     ut_i = ut_i.unsqueeze(0).to(self.device)#, non_blocking = True)
@@ -244,7 +260,7 @@ class Trainer:
         avg_seed_loss = np.mean(seed_val_losses)
 
         # Explicitly clear CUDA cache after validation to free up memory for training
-        del t, xt, ut, y1, image, mask, diagnosis
+        del t, xt, ut, cond_ot, mask_ot, diagnosis_ot, image, mask, diagnosis
         torch.cuda.empty_cache()
     
         # Return mean across all seeds for more robust validation metric
@@ -370,10 +386,18 @@ class Trainer:
                 x0 = torch.randn_like(image)
 
                 # Sample time, location, and conditional flow
-                t, xt, ut, _, y1= self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=diagnosis)
+                # Keep mask and diagnosis aligned with OT permutation by packing both into y1
+                B = image.shape[0] # batch size
+                diagnosis_scalar = diagnosis.view(B, -1)[:, :1] # batch size, 1 --> scalar diagnosis
+                diagnosis_map = diagnosis_scalar.to(mask.dtype).view(B, 1, 1, 1, 1).expand(-1, 1, *mask.shape[2:]) # batch size, 1, D, H, W --> match mask domension for concatenation
+                cond = torch.cat([mask, diagnosis_map], dim=1) # concatenate mask and diagnosis to keep track during OT permutation
+
+                t, xt, ut, _, cond_ot = self.fm.guided_sample_location_and_conditional_flow(x0=x0, x1=image, y1=cond)
+                mask_ot = cond_ot[:, :1] # OT permuted mask
+                diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype) # OT permuted diagnosis scalar
 
                 #move to GPU if available: single img possible bc order manteined, add back batch dimension
-                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, y1, mask): 
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot): 
                     t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
                     xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
                     ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
