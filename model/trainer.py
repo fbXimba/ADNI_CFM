@@ -18,6 +18,62 @@ from tqdm.auto import tqdm
 
 # NOTE: no gradient accumalation instead of per image in batch for greater numerical stability and it wouldn't change much
 
+
+def perturb_mask(mask, apply_prob=0.7, p_morph=0.25, p_dropout=0.02, noise_std=0.05):
+    """
+    Mask modification (for training only) : #boundary perturbation (dilation/erosion), gaussian noise, spatial dropout and reinstatement to original range
+    Args:
+    -----   
+        mask: tensor
+            input mask to perturb
+        apply_prob: float
+            probability to apply augmentation pipeline
+        p_morph: float
+            probability to apply morphological perturbation (dilation/erosion)
+        p_dropout: float
+            probability for spatial dropout
+        noise_std: float
+            standard deviation for gaussian noise
+    Returns:
+    --------       
+        perturbed_mask: tensor
+            augmented mask with same shape as input = noisy and slightly morphologically perturbed version
+    Note:
+    -----
+        To void operations set all values to 0
+    """
+
+    # Track original range (any range, not only [-1,1]) #keepdim=True to keep dimension for final range reinstatement)
+    mask_min = mask.amin(dim=(2, 3, 4), keepdim=True) # find minimum value in values in dimensions (D,H,W)=(2,3,4) 
+    mask_max = mask.amax(dim=(2, 3, 4), keepdim=True) # find maximum value in values in dimensions (D,H,W)=(2,3,4)
+
+    # Apply or skip entirely: some noisy some not to not overfit over noisy masks and the clean ones' benefits
+    if torch.rand(1, device=mask.device) > apply_prob:
+        return mask
+
+    # Too much according to Tom, gauss noise already modifies edges a bit?
+    ## 1. Boundary perturbation with dilation/erosio = morphological variation over random kernel (3-5)
+    #if torch.rand(1, device=mask.device) < p_morph:
+    #    k = torch.randint(1, 3, (1,), device=mask.device).item() * 2 + 1  # kernel = 3 or 5
+    #    if torch.rand(1, device=mask.device) < 0.5: # dilation
+    #        mask = F.max_pool3d(mask, kernel_size=k, stride=1, padding=k//2)
+    #    else: # erosion
+    #        mask = -F.max_pool3d(-mask, kernel_size=k, stride=1, padding=k//2)
+
+    # 2. Gaussian noise over strict values to smooth vt?
+    if noise_std > 0:
+        mask = mask + noise_std * torch.randn_like(mask) # x_gn = x + sigma*eps , eps~N(0,1) 
+
+    # 3. Spatial dropout to help with generation with incomplete masks!!
+    if p_dropout > 0:
+        keep = (torch.rand_like(mask) > p_dropout).float()
+        mask = mask * keep + mask_min * (1.0 - keep) # dropped voxels go to background-like value = minimum in current mask
+
+    # Reinstate to original range
+    mask = torch.max(torch.min(mask, mask_max), mask_min)
+
+    return mask
+
 class Trainer:
     def __init__(
         self,
@@ -33,8 +89,8 @@ class Trainer:
         warmup_steps: int = 0,
         lr_min: float = 2e-7,
         gamma_decay: float = 0.9999,
-        pl_factor: float = 0.5,
-        pl_patience: int = 500,
+        #pl_factor: float = 0.5,
+        #pl_patience: int = 500,
         results_dir: str = "./results_CFM",
         save_every: int = 100,
         wb_run: str = None,
@@ -42,6 +98,7 @@ class Trainer:
         ema_decay: float = 0.995,
         update_ema_every: int = 100,
         grad_norm: float = 1.0,
+        weight_decay: float = 1e-4,
         val_seeds: list = [42, 135, 654]
         ):
         super().__init__()
@@ -62,6 +119,7 @@ class Trainer:
         self.loss_type = loss_type
 
         self.grad_norm = grad_norm
+        self.weight_decay = weight_decay
 
         self.val_seeds = val_seeds
         
@@ -80,7 +138,7 @@ class Trainer:
             self.ema_model = None
 
         # Optimizer: Adam
-        self.opt = torch.optim.Adam(model.parameters(), lr=self.lr)
+        self.opt = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
         # Learning rate scheduler
         if self.scheduler_type == "cos":
@@ -88,10 +146,10 @@ class Trainer:
         elif self.scheduler_type == "exp":
             self.gamma_decay = gamma_decay
             self.lr_scheduler = ExponentialLR(self.opt, gamma=self.gamma_decay)
-        elif self.scheduler_type == "plateau":
-            self.pl_factor = pl_factor
-            self.pl_patience = pl_patience
-            self.lr_scheduler = ReduceLROnPlateau(self.opt, mode='min', factor=self.pl_factor, patience=self.pl_patience)
+        #elif self.scheduler_type == "plateau":
+        #    self.pl_factor = pl_factor
+        #    self.pl_patience = pl_patience
+        #    self.lr_scheduler = ReduceLROnPlateau(self.opt, mode='min', factor=self.pl_factor, patience=self.pl_patience)
         else:
             self.lr_scheduler = None
 
@@ -396,8 +454,11 @@ class Trainer:
                 mask_ot = cond_ot[:, :1] # OT permuted mask
                 diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype) # OT permuted diagnosis scalar
 
+                # mask augmentation AFTER OT (so that OT image-mask pairing stays consistent?)
+                mask_ot_noisy = perturb_mask( mask_ot, apply_prob=0.7, p_morph=0.25, p_dropout=0.02, noise_std=0.05)
+
                 #move to GPU if available: single img possible bc order manteined, add back batch dimension
-                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot): 
+                for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot_noisy): 
                     t_i = t_i.unsqueeze(0).to(self.device, non_blocking = True)
                     xt_i = xt_i.unsqueeze(0).to(self.device, non_blocking = True)
                     ut_i = ut_i.unsqueeze(0).to(self.device, non_blocking = True)
@@ -419,8 +480,7 @@ class Trainer:
                     loss.backward()
 
                     # gradient clipping
-                    if self.grad_norm is not None:
-                        clip_grad_norm_(self.model.parameters(), max_norm=self.grad_norm)
+                    clip_grad_norm_(self.model.parameters(), max_norm=self.grad_norm)
 
                     # Optimization step    
                     self.opt.step()
@@ -442,8 +502,8 @@ class Trainer:
                         print(f"Warmup complete at step {self.step}")
 
                     elif self.step > self.warmup_steps and self.lr_scheduler is not None:
-                        if not isinstance(self.lr_scheduler, ReduceLROnPlateau):
-                            self.lr_scheduler.step()
+                        #if not isinstance(self.lr_scheduler, ReduceLROnPlateau):
+                        self.lr_scheduler.step()
 
                     # Track lr, loss
                     current_lr = self.opt.param_groups[0]['lr']
@@ -478,9 +538,9 @@ class Trainer:
                             if self.val_loader is not None:
                                 self.val_loss = self.validate()
 
-                                # Step ReduceLROnPlateau with validation loss
-                                if isinstance(self.lr_scheduler, ReduceLROnPlateau):
-                                    self.lr_scheduler.step(self.val_loss)
+                                ## Step ReduceLROnPlateau with validation loss
+                                #if isinstance(self.lr_scheduler, ReduceLROnPlateau):
+                                #    self.lr_scheduler.step(self.val_loss)
 
                             if self.use_ema and self.val_loader is not None:
                                 self.ema_val_loss = self.validate_ema()

@@ -4,7 +4,7 @@ directories:
   test_dataset_dir: "../head_datasets/ADNI_test_dataset/"
   results_dir: "./results_CFM_ADNI"
   gen_samples_dir: "./gen_samples_CFM_ADNI"
-  checkpoints_dir: "./results_CFM_ADNI/20260304_140202"
+  checkpoints_dir: "./results_CFM_ADNI/20260313_122645"
 
 parameters:
   epochs: 400
@@ -29,13 +29,14 @@ parameters:
   use_ema: True
   ema_decay: 0.995
   grad_norm: 1.0 
+  weight_decay: 1e-4
   val_seeds: [42, 135, 654]
 
 sampling:
   num_samples: 1
   label: "CN"
   seed: 48
-  checkpoint: 183
+  checkpoint: 80
   ema: True
   mask_id: #"005_S_0610"
 

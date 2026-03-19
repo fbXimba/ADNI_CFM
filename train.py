@@ -49,15 +49,16 @@ parser.add_argument("--save_every", type=int, default=params["save_every"], help
 parser.add_argument("--lr", type=float, default=params["lr"], help="Learning rate")
 parser.add_argument("--loss_type", type=str, default=params["loss_type"], help="Loss function type: \"l1\", \"l2\", \"le\" implemented")
 parser.add_argument("--warmup_steps", type=int, default=params["warmup_steps"], help="Number of warmup steps")
-parser.add_argument("--lr_scheduler", type=str, default=params["lr_scheduler"], help="Learning rate scheduler: \"cos\", \"exp\", \"plateau\" implemented")
+parser.add_argument("--lr_scheduler", type=str, default=params["lr_scheduler"], help="Learning rate scheduler: \"cos\", \"exp\" implemented") #,\"plateau\"
 parser.add_argument("--lr_min", type=float, default=params["lr_min"], help="Minimum learning rate")
 parser.add_argument("--gamma_decay", type=float, default=params["gamma_decay"], help="Gamma decay for learning rate with exponential decay scheduler")
-parser.add_argument("--pl_factor", type=float, default=params["pl_factor"], help="Factor applied for learning rate with plateau scheduler")
-parser.add_argument("--pl_patience", type=int, default=params["pl_patience"], help="Patience for learning rate with plateau scheduler")
+#parser.add_argument("--pl_factor", type=float, default=params["pl_factor"], help="Factor applied for learning rate with plateau scheduler")
+#parser.add_argument("--pl_patience", type=int, default=params["pl_patience"], help="Patience for learning rate with plateau scheduler")
 parser.add_argument("--use_ema", type=bool, default=params["use_ema"], help="Use EMA")
 parser.add_argument("--ema_decay", type=float, default=params["ema_decay"], help="EMA decay")
 parser.add_argument("--update_ema_every", type=int, default=params["update_ema_every"], help="Update EMA every n steps")
 parser.add_argument("--grad_norm", type=float, default=params["grad_norm"], help="Gradient clipping norm max, set to None to disable")
+parser.add_argument("--weight_decay", type=float, default=params["weight_decay"], help="Weight decay for AdamW optimizer")
 parser.add_argument("--results_dir", type=str, default=dirs["results_dir"], help="Directory to save runs' results")
 parser.add_argument("--key", type=str, default=wb["key"], help="Weight and Biases key")
 parser.add_argument("--val_seeds", type=list, default=params["val_seeds"], help="Seeds for fixed sampling of validation set")
@@ -159,10 +160,11 @@ trainer = Trainer(
     scheduler_type=args.lr_scheduler,
     lr_min=args.lr_min,
     gamma_decay=args.gamma_decay, # for exponential decay scheduler
-    pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
-    pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
+    #pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
+    #pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
     wb_run=(now if args.key is not None else None), # use timestamp as wandb run name if wandb logging enabled
     grad_norm=args.grad_norm, #gradien clipping norm max
+    weight_decay=args.weight_decay, # weight decay for AdamW optimizer
     val_seeds=args.val_seeds # seeds for validation set fixed sampling
     )
 
