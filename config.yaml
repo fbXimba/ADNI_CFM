@@ -40,5 +40,13 @@ sampling:
   ema: True
   mask_id: #"005_S_0610"
 
+dataset:
+  dataset_list: "seeds_coupling.csv"
+  info_masks: "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
+  masks: "../head_datasets/ADNI_test_dataset/masks"
+  data_len: 100
+  seed: 36
+  sample_dir: "../gen_dataset"
+
 wandb:
   key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d
