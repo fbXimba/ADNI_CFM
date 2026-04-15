@@ -47,7 +47,7 @@ parser.add_argument("--out_channels", type=int, default=params["out_channels"], 
 parser.add_argument("--num_classes", type=int, default=params["num_classes"], help="Number of classes (CN, MCI, AD)")
 parser.add_argument("--save_every", type=int, default=params["save_every"], help="Save model every n steps")
 parser.add_argument("--lr", type=float, default=params["lr"], help="Learning rate")
-parser.add_argument("--loss_type", type=str, default=params["loss_type"], help="Loss function type: \"l1\", \"l2\", \"le\" implemented")
+parser.add_argument("--loss_type", type=str, default=params["loss_type"], help="Loss function type: \"l1\", \"l2\", \"leb\", \"leh\" implemented")
 parser.add_argument("--warmup_steps", type=int, default=params["warmup_steps"], help="Number of warmup steps")
 parser.add_argument("--lr_scheduler", type=str, default=params["lr_scheduler"], help="Learning rate scheduler: \"cos\", \"exp\" implemented") #,\"plateau\"
 parser.add_argument("--lr_min", type=float, default=params["lr_min"], help="Minimum learning rate")

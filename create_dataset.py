@@ -41,12 +41,11 @@ if __name__ == "__main__":
 
     seed = args.seed
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    count=0 # counter to loop on subjects
 
     # dataset directory
     os.makedirs(args.sample_dir, exist_ok=True)
 
-    # fron masks subject info
+    # from masks subject info
     df = pd.read_csv(args.info_masks)
     len_subj = len(df['Subject'])
 
@@ -54,22 +53,29 @@ if __name__ == "__main__":
     model = load_trained_model(args.checkpoints_dir, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)
 
     with open(args.dataset_list, 'w') as f:
-        #header
+        # header
         f.write("Subject,Diagnosis,Seed\n")
         # loop on diagnosis and subjects to write the csv file
         for diagnosis in ['CN', 'MCI', 'AD']:
+            count = 0 # reset counter to loop on subjects for diagnosis
+            
+            #select subjects by diagnosis
+            df_diag = df[df['Group'] == diagnosis] # or df[df['Diagnosis'] == index_to_label[diagnosis]]
+            len_diag = len(df_diag)
+             
             for i in range(args.data_len):
-                round = count // len_subj
+                round = count // len_diag # to loop on subjects
+                idx = count - len_diag * round # index to select the subject for the current diagnosis
 
                 # write the subject, diagnosis and seed to the csv file
-                subject = df['Subject'][count-len_subj*round]
+                subject = df_diag['Subject'].iloc[idx]
                 f.write(f"{subject},{diagnosis},{seed}\n")
 
                 # sampling
                 target_label = label_to_idx[diagnosis]
                 mask_path = os.path.join(args.masks, f"{subject}_mask.nii.gz")
-                sample_from_mask(model, mask_path, 1, args.sample_dir, target_label, seed, device)    
+                sample_from_mask(model, mask_path, num_samples=1, sample_dir=args.sample_dir, target_label=target_label, seed=seed, device=device)
 
                 # increment of 1 to change the seed for every sample!!
                 seed += 1
-                count +=1
+                count += 1

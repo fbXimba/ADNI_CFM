@@ -84,7 +84,7 @@ class Trainer:
         batch_size: int = 4,
         epochs: int = 1000,
         lr: float = 2e-4,
-        loss_type: str = "le",
+        loss_type: str = "leh",
         scheduler_type: str = None,
         warmup_steps: int = 0,
         lr_min: float = 2e-7,
@@ -185,10 +185,14 @@ class Trainer:
             loss = torch.mean(torch.abs(ut - vt)) # variante smooth/huber loss : F.smooth_l1_loss(vt, ut, beta=0.05)
         elif self.loss_type == 'l2': # mean squared error
             loss = F.mse_loss(vt, ut)
-        elif self.loss_type == 'le': # weighted sum of l1 and l2 with fixed coefficients
+        elif self.loss_type == 'leb': # weighted sum of l1 and l2 with fixed coefficients for brain volumes
             loss_l1 = torch.mean(torch.abs(ut - vt)) # variante smooth/huber loss : F.smooth_l1_loss(vt, ut, beta=0.05)
             loss_l2 = F.mse_loss(vt, ut)
             loss = 0.3 * loss_l1 + 0.7 * loss_l2 # weighted sum coefficients to evaluate
+        elif self.loss_type == 'leh': # weighted sum of l1 and l2 with fixed coefficients for head volumes
+            loss_l1 = torch.mean(torch.abs(ut - vt)) # variante smooth/huber loss : F.smooth_l1_loss(vt, ut, beta=0.05)
+            loss_l2 = F.mse_loss(vt, ut)
+            loss = 0.7 * loss_l1 + 0.3 * loss_l2 # weighted sum coefficients to evaluate
             # lambda_t = 0.05 * t**2 
             # loss = mse + lambda_t * smooth_l1
 

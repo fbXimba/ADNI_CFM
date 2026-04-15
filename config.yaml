@@ -18,7 +18,7 @@ parameters:
   num_classes: 3  
   save_every: 1000
   lr: 2e-4
-  loss_type: "le"
+  loss_type: "leh"
   warmup_steps: 5000
   lr_scheduler: "cos"
   lr_min: 2e-7
@@ -36,17 +36,17 @@ sampling:
   num_samples: 1
   label: "CN"
   seed: 48
-  checkpoint: 80
+  checkpoint: 78
   ema: True
   mask_id: #"005_S_0610"
 
 dataset:
   dataset_list: "seeds_coupling.csv"
   info_masks: "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
-  masks: "../head_datasets/ADNI_test_dataset/masks"
-  data_len: 100
+  masks: "../head_datasets/ADNI_test_dataset/mask"
+  data_len: 10
   seed: 36
-  sample_dir: "../gen_dataset"
+  sample_dir: "../gen_dataset_fra"
 
 wandb:
   key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d
