@@ -7,7 +7,7 @@ directories:
   checkpoints_dir: "./results_CFM_ADNI/"
 
 parameters:
-  epochs: 400
+  epochs: 360 # 400 : 201600, 300 : 151200, 360 : 181440
   batch_size: 8 #4, 8, 16 
   num_workers: 0
   input_size: 128
@@ -23,6 +23,7 @@ parameters:
   lr_scheduler: "cos"
   lr_min: 2e-7
   gamma_decay: 0.9999
+  t_max_step: 120000 # for cosine scheduler, can be set to total steps or a smaller value for faster decay
   pl_factor: 0.5
   pl_patience: 500
   update_ema_every: 10
@@ -36,16 +37,16 @@ sampling:
   num_samples: 1
   label: "CN"
   seed: 48
-  checkpoint: "93"
+  checkpoint: "84"
   run: "20260420_111832"
   ema: True
   mask_id: 941_S_1203 #"005_S_0610"
 
 dataset:
-  info_masks: "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
+  info_masks:  "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv" # file che crea "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
   masks: "../head_datasets/ADNI_test_dataset/mask"
   data_len: 60 # for all
-  seed: 36
+  seed: 42
   num_samples: 3
   run: "20260420_111832"
 

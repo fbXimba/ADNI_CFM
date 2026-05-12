@@ -1,10 +1,15 @@
 #script per creare datasets
 import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
+os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
+os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
+
 import pandas as pd
 import argparse
 from sampling import sample_from_mask, load_trained_model
 import torch
 import yaml
+import time
 
 if __name__ == "__main__":
 
@@ -23,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_samples', type=int, default=dataset["num_samples"], help='number of samples to generate per subject')
     parser.add_argument('--sample_dir', default=dirs["sample_dir"], help='directory to save generated dataset')
     parser.add_argument('--run', type=str, default=dataset["run"], help='run identifier')
-    parser.add_argument("--checkpoint", type=int, default=samp["checkpoint"], help="Checkpoint step to load the model from")
+    parser.add_argument("--checkpoint", type=str, default=samp["checkpoint"], help="Checkpoint step to load the model from")
     parser.add_argument("--checkpoints_dir", type=str, default=dirs["checkpoints_dir"], help="Directory of checkpoints")
     parser.add_argument("--input_size", type=int, default=params["input_size"], help="Input size for the model")
     parser.add_argument("--num_channels", type=int, default=params["num_channels"], help="Number of channels in the model")
@@ -48,6 +53,7 @@ if __name__ == "__main__":
     # dataset directory
     os.makedirs(args.sample_dir, exist_ok=True)
     output_folder = os.path.join(args.sample_dir, args.run, args.checkpoint)
+    os.makedirs(output_folder, exist_ok=True)
 
     # from masks subject info
     df = pd.read_csv(args.info_masks)
@@ -55,11 +61,13 @@ if __name__ == "__main__":
 
     # load the trained model for sampling
     checkpoint_path = os.path.join(args.checkpoints_dir, args.run)
+    t_in = time.time()
     model = load_trained_model(checkpoint_path, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)
 
     with open(os.path.join(args.sample_dir, args.run, f"{args.run}_chkpt{args.checkpoint}.csv"), 'w') as f:
         # header
         f.write("Subject,Group,Seed,Filename,Filename_processed\n")
+        
         # loop on diagnosis and subjects to write the csv file
         for diagnosis in df['Group'].unique():
             count = 0 # reset counter to loop on subjects for diagnosis
@@ -76,8 +84,8 @@ if __name__ == "__main__":
                 # write the subject, diagnosis and seed to the csv file
                 subject = df_diag['Subject'].iloc[idx]
                 for j in range(args.num_samples):  
-                    filename = f"{subject}_sampled_{diagnosis}_{seed+j}.nii.gz" #same as in sample_from_mask function only works because n=1
-                    filename_processed = f"{subject}_sampled_{diagnosis}_{seed+j}_processed.nii.gz"
+                    filename = f"{subject}_sampled_{diagnosis}_{seed+j*6}.nii.gz" #same as in sample_from_mask function only works because n=1
+                    filename_processed = f"{subject}_sampled_{diagnosis}_{seed+j*6}_processed.nii.gz"
                     f.write(f"{subject},{diagnosis},{seed+j},{filename},{filename_processed}\n")
 
                 # sampling
@@ -86,5 +94,8 @@ if __name__ == "__main__":
                 sample_from_mask(model, mask_path, num_samples=args.num_samples, sample_dir=output_folder, target_label=target_label, seed=seed, device=device)
 
                 # increment of 1 to change the seed for every sample!!
-                seed += args.num_samples
+                seed += args.num_samples*6 # increment of 6 to have different seeds for each sample, can be adjusted if needed
                 count += 1
+
+    t_fin = time.time()
+    print(f"Dataset creation completed in {(t_fin - t_in)/60:.2f} minutes")

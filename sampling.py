@@ -209,7 +209,7 @@ def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, se
     
     for i in range(num_samples):
         # Start from noise with seed for reproducibility
-        seed_i = seed + i  # different seed for each sample
+        seed_i = seed + i*6  # different seed for each sample: incerement of 6
         torch.manual_seed(seed_i)
 
         # Generate noise input: *mask.shape[2:] = (D, H, W)
@@ -269,7 +269,7 @@ def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, d
         mask = mask.to(device).unsqueeze(0)  # (1, 1, D, H, W)
         
         # Set seed for noise generation (reproducibility for each sample index)
-        seed_i = seed + i  # different seed for each sample
+        seed_i = seed + i*6  # different seed for each sample increment of 6
         torch.manual_seed(seed_i)
         
         # Generate noise input with seed: *mask.shape[2:] = (D, H, W)

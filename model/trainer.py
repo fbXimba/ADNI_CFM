@@ -89,6 +89,7 @@ class Trainer:
         warmup_steps: int = 0,
         lr_min: float = 2e-7,
         gamma_decay: float = 0.9999,
+        t_max_step: int = 100000, # for cosine scheduler, can be set to total steps or a smaller value for faster decay
         #pl_factor: float = 0.5,
         #pl_patience: int = 500,
         results_dir: str = "./results_CFM",
@@ -116,6 +117,7 @@ class Trainer:
         self.scheduler_type = scheduler_type
         self.warmup_steps = warmup_steps
         self.lr_min = lr_min
+        self.t_max_step = t_max_step
         self.loss_type = loss_type
 
         self.grad_norm = grad_norm
@@ -142,7 +144,7 @@ class Trainer:
 
         # Learning rate scheduler
         if self.scheduler_type == "cos":
-            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.tot_steps - self.warmup_steps, eta_min=self.lr_min)
+            self.lr_scheduler = CosineAnnealingLR(self.opt, T_max=self.t_max_step - self.warmup_steps, eta_min=self.lr_min)
         elif self.scheduler_type == "exp":
             self.gamma_decay = gamma_decay
             self.lr_scheduler = ExponentialLR(self.opt, gamma=self.gamma_decay)
@@ -415,6 +417,7 @@ class Trainer:
                         "lr_warmup_steps": self.warmup_steps,
                         "lr_min": self.lr_min,
                         "lr_scheduler": self.scheduler_type,
+                        "max_cosine_steps": self.t_max_step,
                         "loss_type": self.loss_type,
                         "save_every": self.save_every,
                         "use_ema": self.use_ema,
@@ -505,7 +508,7 @@ class Trainer:
                             param_group['lr'] = self.lr
                         print(f"Warmup complete at step {self.step}")
 
-                    elif self.step > self.warmup_steps and self.lr_scheduler is not None:
+                    elif self.step > self.warmup_steps and self.lr_scheduler is not None and self.step < self.t_max_step:
                         #if not isinstance(self.lr_scheduler, ReduceLROnPlateau):
                         self.lr_scheduler.step()
 
@@ -557,8 +560,9 @@ class Trainer:
                                 self.best_ema_val_loss = self.ema_val_loss
 
                             # Checkpoint saving
-                            self.save_checkpoint(avg_loss=avg_loss)
-                            print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
+                            if self.step > self.warmup_steps: # save only after warmup
+                                self.save_checkpoint(avg_loss=avg_loss)
+                                print(f"Step [{self.step}/{self.tot_steps}] - Checkpoint saved\n")
 
                             if self.wb_run is not None: 
                                 wandb.log({"val_loss": self.val_loss,# values can be None, run won't fail

@@ -52,6 +52,7 @@ parser.add_argument("--warmup_steps", type=int, default=params["warmup_steps"], 
 parser.add_argument("--lr_scheduler", type=str, default=params["lr_scheduler"], help="Learning rate scheduler: \"cos\", \"exp\" implemented") #,\"plateau\"
 parser.add_argument("--lr_min", type=float, default=params["lr_min"], help="Minimum learning rate")
 parser.add_argument("--gamma_decay", type=float, default=params["gamma_decay"], help="Gamma decay for learning rate with exponential decay scheduler")
+parser.add_argument("--t_max_step", type=int, default=params["t_max_step"], help="T max step for cosine annealing scheduler, can be set to total steps or a smaller value for faster decay")
 #parser.add_argument("--pl_factor", type=float, default=params["pl_factor"], help="Factor applied for learning rate with plateau scheduler")
 #parser.add_argument("--pl_patience", type=int, default=params["pl_patience"], help="Patience for learning rate with plateau scheduler")
 parser.add_argument("--use_ema", type=bool, default=params["use_ema"], help="Use EMA")
@@ -160,6 +161,7 @@ trainer = Trainer(
     scheduler_type=args.lr_scheduler,
     lr_min=args.lr_min,
     gamma_decay=args.gamma_decay, # for exponential decay scheduler
+    t_max_step=args.t_max_step, # for cosine annealing scheduler, can be set to total steps or a smaller value for faster decay
     #pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
     #pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
     wb_run=(now if args.key is not None else None), # use timestamp as wandb run name if wandb logging enabled
