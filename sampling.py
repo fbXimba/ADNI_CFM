@@ -211,7 +211,6 @@ def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, se
         # Start from noise with seed for reproducibility
         seed_i = seed + i  # different seed for each sample
         torch.manual_seed(seed_i)
-        np.random.seed(seed_i)
 
         # Generate noise input: *mask.shape[2:] = (D, H, W)
         noise = torch.randn(1, 1, *mask.shape[2:]).to(device)  # (1, 1, D, H, W)
@@ -272,7 +271,6 @@ def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, d
         # Set seed for noise generation (reproducibility for each sample index)
         seed_i = seed + i  # different seed for each sample
         torch.manual_seed(seed_i)
-        np.random.seed(seed_i)
         
         # Generate noise input with seed: *mask.shape[2:] = (D, H, W)
         noise = torch.randn(1, 1, *mask.shape[2:]).to(device)  # (1, 1, D, H, W)
@@ -305,6 +303,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=samp["seed"], help="Random seed for sampling")
     parser.add_argument("--sample_dir", type=str, default=dirs["gen_samples_dir"], help="Directory to save sampled data")
     parser.add_argument("--checkpoint", type=int, default=samp["checkpoint"], help="Checkpoint step to load the model from")
+    parser.add_argument("--run", type=str, default=samp["run"], help="Run identifier for checkpoint loading")
     parser.add_argument("--checkpoints_dir", type=str, default=dirs["checkpoints_dir"], help="Directory of checkpoints")
     parser.add_argument("--input_size", type=int, default=params["input_size"], help="Input size for the model")
     parser.add_argument("--num_channels", type=int, default=params["num_channels"], help="Number of channels in the model")
@@ -314,15 +313,15 @@ if __name__ == "__main__":
     parser.add_argument("--num_classes", type=int, default=params["num_classes"], help="Number of classes (CN, MCI, AD)")
     parser.add_argument("--ema", type=bool, default=samp["ema"], help="Whether to use EMA weights for sampling")
     parser.add_argument("--mask_id", type=str, default=samp["mask_id"], help="Subject ID to use for mask conditioning, if None uses random masks from directory")
-    parser.add_argument("--csv_file_dataset", type=str, default=samp["csv_file_dataset"], help="CSV file coupling seeds, subjects and diagnosis for dataset creation")
+    #parser.add_argument("--csv_file_dataset", type=str, default=samp["csv_file_dataset"], help="CSV file coupling seeds, subjects and diagnosis for dataset creation")
     
     args = parser.parse_args()
       
     print("NOTE: assuming parameters correspond to the trained model chosen!!")
     
     # Create sample directory with timestamp
-    now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    sample_dir = os.path.join(args.sample_dir, now)
+    #now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    sample_dir = os.path.join(args.sample_dir, args.run, args.checkpoint)
     os.makedirs(sample_dir, exist_ok=True)
     
     # Set device
@@ -332,7 +331,8 @@ if __name__ == "__main__":
     target_label = label_to_idx[args.label] # integer label for conditional generation
     
     # Load trained model
-    model = load_trained_model(args.checkpoints_dir, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)
+    checkpoint_path = os.path.join(args.checkpoints_dir, args.run)
+    model = load_trained_model(checkpoint_path, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)
     
     if args.mask_id is not None:
         print(f"Sampling with fixed mask from subject ID: {args.mask_id}")
