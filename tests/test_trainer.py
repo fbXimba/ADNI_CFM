@@ -142,6 +142,7 @@ class TestLosses:
 class TestSampling:
     """Test sampling pipeline"""
     
+    @pytest.mark.slow
     def test_sampling_produces_output(self, unet_model_eval, device):
         """Test sampling produces correct output shape"""
         noise = torch.randn(1, 1, 64, 64, 64, device=device)
@@ -157,6 +158,7 @@ class TestSampling:
         assert output.shape == noise.shape
         assert output.device == device
     
+    @pytest.mark.slow
     def test_sampling_all_diagnoses(self, unet_model_eval, device):
         """Test sampling for all diagnosis classes"""
         noise = torch.randn(1, 1, 64, 64, 64, device=device)
@@ -177,6 +179,7 @@ class TestSampling:
 class TestPipelines:
     """Test full pipelines"""
     
+    @pytest.mark.slow
     def test_batch_consistency(self, unet_model_eval, device):
         """Test batch processing is consistent"""
         # Process as batch
@@ -250,7 +253,8 @@ class TestMaskPerturbation:
 
 class TestBatchSizes:
     """Test with different batch sizes"""
-    
+
+    @pytest.mark.slow
     def test_forward_pass_batch_8(self, unet_model, device):
         """Test model with realistic batch size 8"""
         batch_size = 8
@@ -264,6 +268,7 @@ class TestBatchSizes:
         assert output.shape == (batch_size, 1, 64, 64, 64)
         assert output.device == device
     
+    #@pytest.mark.slow
     def test_loss_computation_batch_4(self, trainer_instance, device):
         """Test loss computation with batch size 4"""
         ut = torch.randn(4, 1, 64, 64, 64, device=device)

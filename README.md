@@ -29,9 +29,9 @@ top of the main scripts for your system.
 
 **1. Pytorch**
 
-Install PyTorch >=2.0 with **your** CUDA version from 
+Install Python >= 3.10 and PyTorch >=2.0 with **your** CUDA version from 
 [pytorch.org](https://pytorch.org/get-started/locally/) 
-first.
+first. GPU use is strongly recommended for training and sampling.
 
 **2. Dependencies**
 
@@ -115,6 +115,9 @@ pip install -r requirements-test.txt
 
 # Run all tests
 pytest tests/ -v
+
+# Run tests excluding slow ones
+pytest tests/ -v -m "not slow"
 
 ```
 

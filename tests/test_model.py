@@ -3,6 +3,7 @@
 import pytest
 import torch
 import tempfile
+import os
 from model.unet_ADNI import create_model
 
 pytestmark = pytest.mark.unit
@@ -92,13 +93,28 @@ class TestModelProperties:
         params = list(unet_model.parameters())
         assert len(params) > 0
     
-    def test_model_state_dict(self, unet_model):
+    def test_model_state_dict(self):
         """Test model state dict"""
-        state = unet_model.state_dict()
-        assert len(state) > 0
+        model = create_model(
+            image_size=128,
+            num_channels=64,
+            num_res_blocks=2,
+            in_channels=1,
+            out_channels=1,
+            num_classes=None,
+            class_cond=False,
+        )
+        state = model.state_dict()
         
-        # Can save and load
-        with tempfile.NamedTemporaryFile(suffix='.pt') as f:
-            torch.save(state, f.name)
-            loaded = torch.load(f.name)
-            assert len(loaded) == len(state)
+        # Use proper tempfile handling for cross-platform compatibility
+        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as f:
+            temp_path = f.name
+        
+        try:
+            torch.save(state, temp_path)
+            loaded_state = torch.load(temp_path)
+            assert loaded_state.keys() == state.keys()
+        finally:
+            # Ensure file is closed before deletion on Windows
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
