@@ -1,17 +1,16 @@
 #script per creare datasets
 import os
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
-os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
-os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
-
 import pandas as pd
 import argparse
-from sampling import sample_from_mask, load_trained_model
+from sampling import sample_from_mask, load_trained_model, save_samples
 import torch
 import yaml
 import time
 
 if __name__ == "__main__":
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
+    os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
 
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
@@ -28,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_samples', type=int, default=dataset["num_samples"], help='number of samples to generate per subject')
     parser.add_argument('--sample_dir', default=dirs["sample_dir"], help='directory to save generated dataset')
     parser.add_argument('--run', type=str, default=dataset["run"], help='run identifier')
-    parser.add_argument("--checkpoint", type=str, default=samp["checkpoint"], help="Checkpoint step to load the model from")
+    parser.add_argument("--checkpoint", type=str, default=dataset["checkpoint"], help="Checkpoint step to load the model from")
     parser.add_argument("--checkpoints_dir", type=str, default=dirs["checkpoints_dir"], help="Directory of checkpoints")
     parser.add_argument("--input_size", type=int, default=params["input_size"], help="Input size for the model")
     parser.add_argument("--num_channels", type=int, default=params["num_channels"], help="Number of channels in the model")
@@ -91,7 +90,12 @@ if __name__ == "__main__":
                 # sampling
                 target_label = label_to_idx[diagnosis]
                 mask_path = os.path.join(args.masks, f"{subject}_mask.nii.gz")
-                sample_from_mask(model, mask_path, num_samples=args.num_samples, sample_dir=output_folder, target_label=target_label, seed=seed, device=device)
+                # check if smaples already exists
+                if all(os.path.exists(os.path.join(output_folder, f"{subject}_sampled_{diagnosis}_{seed+j*6}.nii.gz")) for j in range(args.num_samples)):
+                    print(f"Samples for subject {subject} with diagnosis {diagnosis} already exists")
+                else:
+                    samples = sample_from_mask(model, mask_path, num_samples=args.num_samples, target_label=target_label, seed=seed, device=device)
+                    save_samples(samples, output_folder)
 
                 # increment of 1 to change the seed for every sample!!
                 seed += args.num_samples*6 # increment of 6 to have different seeds for each sample, can be adjusted if needed

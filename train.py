@@ -1,16 +1,12 @@
 """
 CFM Training Script for ADNI Dataset
 """
-
-# TODO: create proper enviroment temp: env-tesi, epochs nomenclature used improperly? check training loop
 # NOTE: if lr shedule = ReduceLROnPlateau need validation set for validation loss for scheduler step
-
-# TODO: try diff num_workers=0,2,4 diff batch size 4,8,16
 
 # Libraries
 import os
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
-os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" #  set specific GPU if multiple available
+os.environ["CUDA_VISIBLE_DEVICES"]="1" #set specific GPU if multiple available
 os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
 
 import argparse
@@ -23,14 +19,18 @@ from dataset import ADNIDataset
 from torch.utils.data import DataLoader
 import datetime
 import yaml
-import wandb
 
 # Load configuration file: directoories, parameters and wandb
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
-dirs=config["directories"]
-params=config["parameters"]
-wb=config["wandb"]
+try:
+    with open("config.yaml") as f:
+        config = yaml.safe_load(f)
+    dirs=config["directories"]
+    params=config["parameters"]
+    wb=config["wandb"]
+except FileNotFoundError:
+    print("Config file not found!")
+    exit(1)
+chkpt = config.get("checkpoint", {"run": None, "checkpoint": None})
 
 # Hyperparameters and settings
 parser = argparse.ArgumentParser()
@@ -61,18 +61,25 @@ parser.add_argument("--update_ema_every", type=int, default=params["update_ema_e
 parser.add_argument("--grad_norm", type=float, default=params["grad_norm"], help="Gradient clipping norm max, set to None to disable")
 parser.add_argument("--weight_decay", type=float, default=params["weight_decay"], help="Weight decay for AdamW optimizer")
 parser.add_argument("--results_dir", type=str, default=dirs["results_dir"], help="Directory to save runs' results")
+parser.add_argument("--checkpoint_path", type=str, default=os.path.join(dirs["checkpoints_dir"], chkpt["run"], f"checkpoint_{chkpt['checkpoint']}.pt"), help="Path to model checkpoint for resuming training or evaluation")
 parser.add_argument("--key", type=str, default=wb["key"], help="Weight and Biases key")
 parser.add_argument("--val_seeds", type=list, default=params["val_seeds"], help="Seeds for fixed sampling of validation set")
+parser.add_argument("--resume", action="store_true", help="Flag to resume training from checkpoint") # run with --resume to load checkpoint and resume training
 
 args = parser.parse_args()
 
+# Check if checkpoint exists for resuming training
+if args.resume and not os.path.exists(args.checkpoint_path):
+    raise FileNotFoundError(f"Checkpoint file not found: {args.checkpoint_path}")
+
 # Create results directory with timestamp
 now=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-run_dir= os.path.join(args.results_dir, now)
+run_dir= os.path.join(args.results_dir, chkpt["run"] if args.resume else now) # use checkpoint run name if resuming
 os.makedirs(run_dir, exist_ok=True)
 
 # Initialize wandb
 if args.key is not None:
+    import wandb
     # Set environment variables to disable unwanted wandb features
     try:
         os.environ["WANDB_DISABLE_CODE"] = "true"  # no code snapshot
@@ -89,9 +96,6 @@ if args.key is not None:
 else:
     print("Wandb key file not found: proceeding without wandb logging.")
 
-# TODO: CHECK for ReduceLROnPlateau scheduler need validation set for validation loss for scheduler step
-
-# TODO: CHECK dataset in input 
 
 # Dataset and DataLoader
 dataset = ADNIDataset(args.dataset_dir, split="train") # from dataset.py
@@ -129,7 +133,6 @@ print(f"Using device: {device}")
 # Model
 #in_channels = 2 # mask + noise image when conditioned
 #out_channels = 1 # only one channel = one output velocity field
-
 model = create_model(
    args.input_size, 
    args.num_channels, 
@@ -142,7 +145,6 @@ model = create_model(
    ).to(device)
 
 # Trainer
-
 trainer = Trainer(
     model=model,
     loader=loader,
@@ -164,10 +166,11 @@ trainer = Trainer(
     t_max_step=args.t_max_step, # for cosine annealing scheduler, can be set to total steps or a smaller value for faster decay
     #pl_factor=args.pl_factor, # for ReduceLROnPlateau scheduler
     #pl_patience=args.pl_patience, # for ReduceLROnPlateau scheduler
-    wb_run=(now if args.key is not None else None), # use timestamp as wandb run name if wandb logging enabled
+    wb_run=(chkpt["run"] if args.resume else now if args.key is not None else None), # use checkpoint run name if resuming, otherwise use timestamp as wandb run name if wandb logging enabled
     grad_norm=args.grad_norm, #gradien clipping norm max
     weight_decay=args.weight_decay, # weight decay for AdamW optimizer
-    val_seeds=args.val_seeds # seeds for validation set fixed sampling
+    val_seeds=args.val_seeds, # seeds for validation set fixed sampling
+    checkpoint_path=(args.checkpoint_path if args.resume else None), # load checkpoint if resuming, otherwise start from scratch
     )
 
 # Start training

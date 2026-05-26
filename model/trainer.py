@@ -6,8 +6,11 @@ import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torchcfm.conditional_flow_matching import ExactOptimalTransportConditionalFlowMatcher as CFM
 from torch.optim.lr_scheduler import CosineAnnealingLR, ExponentialLR, ReduceLROnPlateau
-import wandb
 from tqdm.auto import tqdm
+try:
+    import wandb
+except Exception as e:
+    print("wandb not installed")
 
 # Trainer class for CFM model training
 # NOTE: .sample_location_and_conditional_flow in torchcfm/guided_conditional_flow_matching.py lines 274-...
@@ -19,7 +22,7 @@ from tqdm.auto import tqdm
 # NOTE: no gradient accumalation instead of per image in batch for greater numerical stability and it wouldn't change much
 
 
-def perturb_mask(mask, apply_prob=0.7, p_morph=0.25, p_dropout=0.02, noise_std=0.05):
+def perturb_mask(mask, apply_prob=0.7, p_dropout=0.02, noise_std=0.05): # , p_morph=0.25
     """
     Mask modification (for training only) : #boundary perturbation (dilation/erosion), gaussian noise, spatial dropout and reinstatement to original range
     Args:
@@ -28,8 +31,8 @@ def perturb_mask(mask, apply_prob=0.7, p_morph=0.25, p_dropout=0.02, noise_std=0
             input mask to perturb
         apply_prob: float
             probability to apply augmentation pipeline
-        p_morph: float
-            probability to apply morphological perturbation (dilation/erosion)
+        #p_morph: float
+        #    probability to apply morphological perturbation (dilation/erosion)
         p_dropout: float
             probability for spatial dropout
         noise_std: float
@@ -100,7 +103,8 @@ class Trainer:
         update_ema_every: int = 100,
         grad_norm: float = 1.0,
         weight_decay: float = 1e-4,
-        val_seeds: list = [42, 135, 654]
+        val_seeds: list = [42, 135, 654],
+        checkpoint_path: str = None
         ):
         super().__init__()
         self.model = model
@@ -112,6 +116,7 @@ class Trainer:
         self.epochs = epochs
         self.step = 0
         self.tot_steps = self.epochs * len(self.loader) * self.batch_size #able to write like this due to drop_last = True in dataloader, making len(loader) constant
+        self.checkpoint_path = checkpoint_path
         
         self.lr = lr
         self.scheduler_type = scheduler_type
@@ -434,14 +439,26 @@ class Trainer:
         
         os.makedirs(self.results_dir, exist_ok=True)
 
-        pbar = tqdm(total=self.tot_steps, desc="Training", unit="step")
+        # Resuming from checkpoint if specified
+        if self.checkpoint_path is not None:
+            self.load_checkpoint(self.checkpoint_path)
+
+        pbar = tqdm(total=self.tot_steps, initial=self.step, desc="Training", unit="step")
         
         self.model.train() # set model to training mode for layers like dropout, batchnorm
          
         checkpoint_losses = [] # windowed: reset after each checkpoint
 
-        for epoch in range(self.epochs):
+        # Iteration ranges from step to tot_steps generalized for checkpoint resumption
+        # Assuming dataloader drop_last = True
+        epochs_completed = self.step // (len(self.loader) * self.batch_size)
+        iteration_in_epoch = (self.step // self.batch_size) % len(self.loader)
+
+        for epoch in range(epochs_completed, self.epochs):
             for i, batch in enumerate(self.loader):
+                # Skip batches if resuming from a checkpoint
+                if epoch == epochs_completed and i < iteration_in_epoch:
+                    continue
 
                 image = batch["image"]        # (B, 1, D, H, W)
                 mask = batch["mask"]          # (B, 1, D, H, W)
@@ -575,7 +592,7 @@ class Trainer:
                     # Increment step counter
                     self.step += 1
 
-                    # Explicit cleanup to free memory after each step
+                    # Explicit cleanup to free memory after each step: time consuming and mostly unecessary
                     #torch.cuda.synchronize()
                     #torch.cuda.empty_cache()
 

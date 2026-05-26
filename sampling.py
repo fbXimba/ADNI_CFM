@@ -4,6 +4,7 @@ import torch
 import torchdiffeq
 import nibabel as nib
 from model.unet_ADNI import create_model
+from typing import List, Tuple
 import argparse
 import yaml
 import datetime
@@ -21,9 +22,11 @@ label_to_idx = {
     "AD": 2
 }
 
+################################################################################
+# FUNCTIONS 
 ###############################################################################
 
-def load_mask_with_affine(mask_path):
+def load_mask_with_affine(mask_path: str) -> Tuple[torch.Tensor, np.ndarray]:
     """
     Load a mask file with its affine transformation
     Args:
@@ -44,7 +47,7 @@ def load_mask_with_affine(mask_path):
     mask = torch.from_numpy(mask_data).float().unsqueeze(0)  # (1, D, H, W)
     return mask, affine
 
-def get_available_masks(mask_dir):
+def get_available_masks(mask_dir: str) -> List[Tuple[str, str]]:
     """
     Get all available mask files from directory
     Args:
@@ -63,7 +66,7 @@ def get_available_masks(mask_dir):
             mask_files.append((subject_id, os.path.join(mask_dir, f)))
     return mask_files
 
-def load_trained_model(checkpoint_dir, checkpoint_step, input_size, num_channels, num_res_blocks, in_channels, out_channels, num_classes, ema, device):
+def load_trained_model(checkpoint_dir: str, checkpoint_step: int, input_size: int, num_channels: int, num_res_blocks: int, in_channels: int, out_channels: int, num_classes: int, ema: bool, device: torch.device) -> torch.nn.Module:
     """
     Create model and load weights from checkpoint
     Args:
@@ -131,7 +134,7 @@ def load_trained_model(checkpoint_dir, checkpoint_step, input_size, num_channels
     
     return model
 
-def generate_sample(model, noise, mask, diagnosis, device):
+def generate_sample(model: torch.nn.Module, noise: torch.Tensor, mask: torch.Tensor, diagnosis: torch.Tensor, device: torch.device) -> torch.Tensor:
     """
     Generates a sample from the model given noise, mask, and diagnosis conditioning
     Args:   
@@ -175,9 +178,91 @@ def generate_sample(model, noise, mask, diagnosis, device):
         
     return traj[-1]  # Return the last time step of the trajectory traj[-1] = generated sample at t=1
 
-def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, seed, device):
+def generate_noise_with_seed(shape: Tuple[int, ...], seed: int, device: torch.device) -> torch.Tensor:
     """
-    Samples using fixed mask and target diagnosis
+    Generate noise tensor with fixed seed for reproducibility    
+    Args:
+    -----
+        shape: tuple
+            shape of noise tensor (e.g., (1, 1, D, H, W))
+        seed: int
+            random seed for noise generation
+        device: torch.device
+            device to create tensor on
+    Returns:
+    --------
+        noise: torch.Tensor
+            random noise tensor
+    """
+    torch.manual_seed(seed)
+    return torch.randn(shape, device=device)
+
+def prepare_mask_for_sampling(mask_path: str, device: torch.device) -> Tuple[torch.Tensor, np.ndarray, str]:
+    """
+    Load mask and prepare for sampling    
+    Args:
+    -----
+        mask_path: str
+            path to mask file (.nii.gz)
+        device: torch.device
+            device to move mask to
+    Returns:
+    --------
+        mask: torch.Tensor
+            mask tensor (1, 1, D, H, W)
+        affine: np.ndarray
+            affine transformation matrix
+        subject_id: str
+            subject identifier extracted from filename
+    """
+    mask, affine = load_mask_with_affine(mask_path)
+    subject_id = os.path.basename(mask_path).replace('_mask.nii.gz', '')
+    mask = mask.to(device).unsqueeze(0)  # (1, 1, D, H, W)
+    return mask, affine, subject_id
+
+def prepare_diagnosis_conditioning(target_label: int, device: torch.device) -> torch.Tensor:
+    """
+    Create diagnosis tensor for conditioning    
+    Args:
+    -----
+        target_label: int
+            target diagnosis label index
+        device: torch.device
+            device to create tensor on
+    Returns:
+    --------
+        diagnosis: torch.Tensor
+            diagnosis tensor (1,)
+    """
+    return torch.tensor([target_label], dtype=torch.long).to(device)
+
+def save_samples(samples_data: List[Tuple[torch.Tensor, str, int, int, np.ndarray]], sample_dir: str) -> List[str]:
+    """
+    Saves generated samples    
+    Args:
+    -----
+        samples_data: list of tuples
+            list of (generated_sample, subject_id, target_label, seed_i, affine) tuples
+        sample_dir: str
+            directory to save the generated samples
+    Returns:
+    --------
+        saved_paths: list
+            list of paths where samples were saved
+    """
+    saved_paths = []
+    for generated_sample, subject_id, target_label, seed_i, affine in samples_data:
+        # Save generated sample with correct affine matrix
+        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{idx_to_label[target_label]}_{seed_i}.nii.gz")
+        nib.save(nib.Nifti1Image(generated_sample.squeeze().cpu().numpy(), affine=affine), save_path)
+        print(f"Saved: {save_path}")
+        saved_paths.append(save_path)
+    
+    return saved_paths
+
+def sample_from_mask(model: torch.nn.Module, mask_path: str, num_samples: int, target_label: int, seed: int, device: torch.device) -> List[Tuple[torch.Tensor, str, int, int, np.ndarray]]:
+    """
+    Generates samples using fixed mask and target diagnosis
     Args:
     -----
         model: torch.nn.Module
@@ -186,8 +271,6 @@ def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, se
             path to mask file (.nii.gz)
         num_samples: int
             number of samples to generate
-        sample_dir: str
-            directory to save the generated samples
         target_label: int
             target diagnosis label for conditional generation
         seed: int
@@ -196,38 +279,24 @@ def sample_from_mask(model, mask_path, num_samples, sample_dir, target_label, se
             device to perform computation on  
     Returns:
     --------
-        None (saves generated samples to specified directory)
+        samples_data: list of tuples
+            list of (generated_sample, subject_id, target_label, seed_i, affine) tuples
     """
-
-    # Load mask with its affine transformation matrix
-    mask, affine = load_mask_with_affine(mask_path)
-    subject_id = os.path.basename(mask_path).replace('_mask.nii.gz', '')
-
-    # Mask and diagnosis to device
-    mask = mask.to(device).unsqueeze(0)  # (1, 1, D, H, W)
-    diagnosis = torch.tensor([target_label], dtype=torch.long).to(device)  # (1,)
+    mask, affine, subject_id = prepare_mask_for_sampling(mask_path, device)
+    diagnosis = prepare_diagnosis_conditioning(target_label, device)
     
+    samples_data = []
     for i in range(num_samples):
-        # Start from noise with seed for reproducibility
-        seed_i = seed + i*6  # different seed for each sample: incerement of 6
-        torch.manual_seed(seed_i)
-
-        # Generate noise input: *mask.shape[2:] = (D, H, W)
-        noise = torch.randn(1, 1, *mask.shape[2:]).to(device)  # (1, 1, D, H, W)
-        
-        # Generate sample with ODE solver (no grad)
+        seed_i = seed + i * 6  # different seed for each sample: increment of 6
+        noise = generate_noise_with_seed((1, 1, *mask.shape[2:]), seed_i, device)
         generated_sample = generate_sample(model, noise, mask, diagnosis, device)
+        samples_data.append((generated_sample, subject_id, target_label, seed_i, affine))
 
-        # Save generated sample with correct affine matrix
-        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{idx_to_label[target_label]}_{seed_i}.nii.gz")
-        nib.save(nib.Nifti1Image(generated_sample.squeeze().cpu().numpy(), affine=affine), save_path)
-        print(f"Saved: {save_path}")
+    return samples_data
 
-    return
-
-def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, device):
+def sample_model(model: torch.nn.Module, mask_dir: str, num_samples: int, target_label: int, seed: int, device: torch.device) -> List[Tuple[torch.Tensor, str, int, int, np.ndarray]]:
     """
-    Samples without fixed mask but with target diagnosis conditioning
+    Generates samples with random masks and target diagnosis conditioning    
     Args:
     -----
         model: torch.nn.Module
@@ -236,8 +305,6 @@ def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, d
             directory containing mask files
         num_samples: int
             number of samples to generate
-        sample_dir: str
-            directory to save the generated samples
         target_label: int
             target diagnosis label for conditional generation
         seed: int
@@ -246,49 +313,37 @@ def sample_model(model, mask_dir, num_samples, sample_dir, target_label, seed, d
             device to perform computation on
     Returns:
     --------
-        None (saves generated samples to specified directory)
+        samples_data: list of tuples
+            list of (generated_sample, subject_id, target_label, seed_i, affine) tuples
     """
-
-    # Get available masks from directory
     available_masks = get_available_masks(mask_dir)
     if not available_masks:
         raise ValueError(f"No mask files found in {mask_dir}")
 
-    # Diagnosis conditioning to device
-    diagnosis = torch.tensor([target_label], dtype=torch.long).to(device)  # (1,)
-
+    diagnosis = prepare_diagnosis_conditioning(target_label, device)
+    samples_data = []
+    
     for i in range(num_samples):
-        # Sample random mask from available masks (truly random, not seeded)
+        # Sample random mask from available masks
         mask_idx = np.random.randint(len(available_masks))
         subject_id, mask_path = available_masks[mask_idx]
         
-        # Load mask with its affine transformation matrix
-        mask, affine = load_mask_with_affine(mask_path)
-        
-        # Mask to device
-        mask = mask.to(device).unsqueeze(0)  # (1, 1, D, H, W)
-        
-        # Set seed for noise generation (reproducibility for each sample index)
-        seed_i = seed + i*6  # different seed for each sample increment of 6
-        torch.manual_seed(seed_i)
-        
-        # Generate noise input with seed: *mask.shape[2:] = (D, H, W)
-        noise = torch.randn(1, 1, *mask.shape[2:]).to(device)  # (1, 1, D, H, W)
-        
-        # Generate sample with ODE solver (no grad)
+        mask, affine, _ = prepare_mask_for_sampling(mask_path, device)
+        seed_i = seed + i * 6
+        noise = generate_noise_with_seed((1, 1, *mask.shape[2:]), seed_i, device)
         generated_sample = generate_sample(model, noise, mask, diagnosis, device)
+        samples_data.append((generated_sample, subject_id, target_label, seed_i, affine))
 
-        # Save generated sample with correct affine matrix
-        save_path = os.path.join(sample_dir, f"{subject_id}_sampled_{idx_to_label[target_label]}_{seed_i}.nii.gz")
-        nib.save(nib.Nifti1Image(generated_sample.squeeze().cpu().numpy(), affine=affine), save_path)
-        print(f"Saved: {save_path}")
-
-    return
+    return samples_data
 
 ###############################################################################
-# Main sampling code
+# MAIN SAMPLING CODE
+###############################################################################
 
 if __name__ == "__main__":
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
+    os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
     
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
@@ -334,15 +389,19 @@ if __name__ == "__main__":
     checkpoint_path = os.path.join(args.checkpoints_dir, args.run)
     model = load_trained_model(checkpoint_path, args.checkpoint, args.input_size, args.num_channels, args.num_res_blocks, args.in_channels, args.out_channels, args.num_classes, args.ema, device)
     
+    # Generate samples
     if args.mask_id is not None:
         print(f"Sampling with fixed mask from subject ID: {args.mask_id}")
         mask_path = os.path.join(args.dataset_dir, "mask", f"{args.mask_id}_mask.nii.gz")
         if not os.path.exists(mask_path):
             raise FileNotFoundError(f"Mask not found: {mask_path}")
-        sample_from_mask(model, mask_path, args.num_samples, sample_dir, target_label, args.seed, device)
+        samples_data = sample_from_mask(model, mask_path, args.num_samples, target_label, args.seed, device)
     else:
         print("Sampling without fixed mask (random masks from directory)")
         mask_dir = os.path.join(args.dataset_dir, "mask")
         if not os.path.exists(mask_dir):
             raise FileNotFoundError(f"Mask directory not found: {mask_dir}")
-        sample_model(model, mask_dir, args.num_samples, sample_dir, target_label, args.seed, device)
+        samples_data = sample_model(model, mask_dir, args.num_samples, target_label, args.seed, device)
+    
+    # Save samples to output folder
+    save_samples(samples_data, sample_dir)
