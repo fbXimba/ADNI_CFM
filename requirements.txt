@@ -1,0 +1,7 @@
+torchcfm
+torchdiffeq>=0.2.3
+numpy<2.0
+nibabel>=5.4.0
+scikit-learn>=1.7.0
+pyyaml>=6.0
+wandb>=0.15.0
