@@ -19,13 +19,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-test.txt
-          pip install "numpy<2.0"
-          pip install pytest-xdist
+          pip install --no-cache-dir -r requirements-test.txt
+          pip install --no-cache-dir "numpy<2.0"
+          pip install --no-cache-dir pytest-xdist
 
       - name: Run tests
         run: pytest tests/ -v -n auto -m "not slow"
