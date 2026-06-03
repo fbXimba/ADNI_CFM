@@ -5,10 +5,6 @@ CFM Training Script for ADNI Dataset
 
 # Libraries
 import os
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" #  set specific GPU if multiple available
-os.environ["CUDA_VISIBLE_DEVICES"]="1" #set specific GPU if multiple available
-os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
-
 import argparse
 import numpy as np
 import torch
@@ -27,10 +23,11 @@ try:
     dirs=config["directories"]
     params=config["parameters"]
     wb=config["wandb"]
+    gpu_id = config.get("GPU", None) # GPU id to use, set to None for auto-detection
+    chkpt = config.get("checkpoint", {"run": None, "checkpoint": None})
 except FileNotFoundError:
     print("Config file not found!")
     exit(1)
-chkpt = config.get("checkpoint", {"run": None, "checkpoint": None})
 
 # Hyperparameters and settings
 parser = argparse.ArgumentParser()
@@ -65,8 +62,22 @@ parser.add_argument("--checkpoint_path", type=str, default=os.path.join(dirs["ch
 parser.add_argument("--key", type=str, default=wb["key"], help="Weight and Biases key")
 parser.add_argument("--val_seeds", type=list, default=params["val_seeds"], help="Seeds for fixed sampling of validation set")
 parser.add_argument("--resume", action="store_true", help="Flag to resume training from checkpoint") # run with --resume to load checkpoint and resume training
+parser.add_argument("--GPU", type=str, default=gpu_id, help="GPU id to use, set to None for auto-detection") # from config file, can be overridden with command line argument
 
 args = parser.parse_args()
+
+# Set GPU device and PyTorch CUDA memory configuration
+try:
+    if args.GPU is not None:
+        os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # set specific GPU if multiple available
+        os.environ["CUDA_VISIBLE_DEVICES"]=args.GPU # set specific GPU if multiple available
+        print(f"Using GPU: {args.GPU}")
+except Exception as e:
+    print(f"Error setting GPU device: {e}")
+try:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
+except Exception as e:
+    print(f"Error setting PyTorch CUDA memory configuration: {e}")
 
 # Check if checkpoint exists for resuming training
 if args.resume and not os.path.exists(args.checkpoint_path):

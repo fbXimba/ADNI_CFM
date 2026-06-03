@@ -18,6 +18,8 @@ if __name__ == "__main__":
     samp = config["sampling"]
     params = config["parameters"] 
     dataset = config["dataset"]
+    gpu_id = config["GPU"]
+
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--info_masks', default=dataset["info_masks"], help='csv file with mask subject information')
@@ -36,9 +38,23 @@ if __name__ == "__main__":
     parser.add_argument("--out_channels", type=int, default=params["out_channels"], help="Number of output channels (velocity field)")
     parser.add_argument("--num_classes", type=int, default=params["num_classes"], help="Number of classes (CN, MCI, AD)")
     parser.add_argument("--ema", type=bool, default=samp["ema"], help="Whether to use EMA weights for sampling")
+    parser.add_argument("--GPU", type=str, default=gpu_id, help="GPU id to use for sampling, set to None for auto-detection")
     args = parser.parse_args()
 
-    only_same_condition = False # whether to sample from same diagnosis condition or different one
+    # Select GPU device  and PyTorch CUDA memory configuration for sampling
+    try:
+        if args.GPU is not None:
+            os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # set specific GPU if multiple available
+            os.environ["CUDA_VISIBLE_DEVICES"]=args.GPU # set specific GPU if multiple available
+            print(f"Using GPU: {args.GPU}")
+    except Exception as e:
+        print(f"Error setting GPU device: {e}")
+    try:
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
+    except Exception as e:
+        print(f"Error setting PyTorch CUDA memory configuration: {e}")
+
+    #only_same_condition = False # whether to sample from same diagnosis condition or different one
 
     label_to_idx = {
         "CN": 0,

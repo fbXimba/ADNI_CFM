@@ -4,7 +4,12 @@
 
 CFM_ADNI is a pipeline for training a Conditional Flow Matching model on the ADNI dataset to generate synthetic 3D brain MRIs. The model learns to generate realistic brain images conditioned on diagnostic labels (CN, MCI, AD) from ***preprocessed*** real patient data using Conditional Flow Matching (CFM) and Optimal Transport.
 
-**Note**: The preprocessing pipeline used for the ADNI dataset can be found on [ADNI_preprocessing](https://github.com/fbXimba/ADNI_preprocessing)
+**Note**: The preprocessing pipeline used for the ADNI dataset can be found on [ADNI_preprocessing](https://github.com/fbXimba/ADNI_preprocessing). The postprocessing pipeline used to reinstate the sampled volumes to ouput similar to the ones from FreeSurfer can be found on [ADNI_postprocessing](https://github.com/fbXimba/ADNI_postprocessing)
+
+## Data
+
+
+The ADNI dataset is public but an application process it's required to access it. If interested please see at [ADNI data](https://adni.loni.usc.edu/data-samples/adni-data/).
 
 ## Pipeline :eyes:
 
@@ -24,14 +29,11 @@ Preprocessed ADNI Data → [Train] → CFM+OT Model → [Sample] → Synthetic B
 
 ## Requirements and setup:
 
-:warning: **GPU Selection**: scripts default to GPU 1 Update the device selection at the 
-top of the main scripts for your system.
-
 **1. Pytorch**
 
 Install Python >= 3.10 and PyTorch >=2.0 with **your** CUDA version from 
 [pytorch.org](https://pytorch.org/get-started/locally/) 
-first. GPU use is strongly recommended for training and sampling.
+first. GPU use is strongly recommended for both training and sampling.
 
 **2. Dependencies**
 
@@ -40,7 +42,7 @@ pip install -r requirements.txt
 ```
 **3. Paths**
 
-Update `config.yaml` with your data paths
+Update `config.yaml` with your data paths, parameters, etc.
 
 **4. Train model**
 ```bash
@@ -56,10 +58,11 @@ python sampling.py --checkpoint 117 --num_samples 1
 ## Configuration file 
 
 Edit `config.yaml` to set:
+- :warning: GPU id if multiple available
 - Data directories (training/validation/test paths)
 - Model hyperparameters (learning rate, batch size, 
 epochs, loss type, ...)
-- Logging key :key:
+- Weights and Biases logging key :key:
 
 ## Model Architecture 
 
@@ -70,9 +73,9 @@ epochs, loss type, ...)
 - **Gradient Checkpointing**: Reduces memory usage during training
 
 **Optional Features**:
-- EMA (Exponential Moving Average)
-- Validation loss and EMA validation loss
-- Weights and Biases logging
+- **EMA** (Exponential Moving Average)
+- **Validation** loss and EMA **validation** loss
+- Weights and Biases **logging**
 
 ## Data Format :card_index_dividers:
 

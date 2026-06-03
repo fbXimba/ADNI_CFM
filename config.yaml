@@ -6,10 +6,12 @@ directories:
   sample_dir: "./gen_datasets"
   checkpoints_dir: "./results_CFM_ADNI/"
 
+GPU: None # set to None for auto-detection, or specify GPU id as "0", "1"...
+
 checkpoint:
   run: "20260512_174841"
   checkpoint: "117"
-  step: 117000
+  #step: 117000
 
 parameters:
   epochs: 360 # 400 : 201600, 300 : 151200, 360 : 181440
@@ -45,12 +47,12 @@ sampling:
   checkpoint: "84"
   run: "20260420_111832"
   ema: True
-  mask_id: 941_S_1203 #"005_S_0610"
+  mask_id: 941_S_1203 
 
 dataset:
-  info_masks:  "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv" # file che crea "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
+  info_masks:  "../head_datasets/ADNI_test_dataset/diagnosis/test_subjects.csv"
   masks: "../head_datasets/ADNI_test_dataset/mask"
-  data_len: 60 # for all
+  data_len: 60 # for all = len test dataset
   seed: 42
   num_samples: 3
   checkpoint: "74"

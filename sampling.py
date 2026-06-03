@@ -341,15 +341,12 @@ def sample_model(model: torch.nn.Module, mask_dir: str, num_samples: int, target
 ###############################################################################
 
 if __name__ == "__main__":
-    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # TODO: set specific GPU if multiple available
-    os.environ["CUDA_VISIBLE_DEVICES"]="1" # TODO: set specific GPU if multiple available
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
-    
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
     dirs = config["directories"]
     samp = config["sampling"]
     params = config["parameters"] 
+    gpu_id = config["GPU"] # GPU id to use for sampling, set to None for auto-detection
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_dir", type=str, default=dirs["test_dataset_dir"], help="Path to the directory containing mask files")
@@ -368,12 +365,26 @@ if __name__ == "__main__":
     parser.add_argument("--num_classes", type=int, default=params["num_classes"], help="Number of classes (CN, MCI, AD)")
     parser.add_argument("--ema", type=bool, default=samp["ema"], help="Whether to use EMA weights for sampling")
     parser.add_argument("--mask_id", type=str, default=samp["mask_id"], help="Subject ID to use for mask conditioning, if None uses random masks from directory")
+    parser.add_argument("--GPU", type=str, default=gpu_id, help="GPU id to use for sampling, set to None for auto-detection")
     #parser.add_argument("--csv_file_dataset", type=str, default=samp["csv_file_dataset"], help="CSV file coupling seeds, subjects and diagnosis for dataset creation")
     
     args = parser.parse_args()
       
     print("NOTE: assuming parameters correspond to the trained model chosen!!")
-    
+
+    # Select GPU device  and PyTorch CUDA memory configuration for sampling
+    try:
+        if args.GPU is not None:
+            os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" # set specific GPU if multiple available
+            os.environ["CUDA_VISIBLE_DEVICES"]=args.GPU # set specific GPU if multiple available
+            print(f"Using GPU: {args.GPU}")
+    except Exception as e:
+        print(f"Error setting GPU device: {e}")
+    try:
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"]="expandable_segments:True" # to allow memory fragmentation and reduce OOM errors
+    except Exception as e:
+        print(f"Error setting PyTorch CUDA memory configuration: {e}")
+
     # Create sample directory with timestamp
     #now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sample_dir = os.path.join(args.sample_dir, args.run, args.checkpoint)
