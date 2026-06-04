@@ -15,13 +15,6 @@ except Exception as e:
 # Trainer class for CFM model training
 # NOTE: .sample_location_and_conditional_flow in torchcfm/guided_conditional_flow_matching.py lines 274-...
 
-# NOTE: careful with loss type see Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport
-# see eq. 10 and th. 3.2 is it okay to alse use abs diff? and consequently le also?
-# looks like not: mse baset ot , loss during training le should be best bus see l1 smooth and t dependence commented out
-
-# NOTE: no gradient accumalation instead of per image in batch for greater numerical stability and it wouldn't change much
-
-
 def perturb_mask(mask, apply_prob=0.7, p_dropout=0.02, noise_std=0.05): # , p_morph=0.25
     """
     Mask modification (for training only) : #boundary perturbation (dilation/erosion), gaussian noise, spatial dropout and reinstatement to original range
@@ -54,7 +47,7 @@ def perturb_mask(mask, apply_prob=0.7, p_dropout=0.02, noise_std=0.05): # , p_mo
     if torch.rand(1, device=mask.device) > apply_prob:
         return mask
 
-    # Too much according to Tom, gauss noise already modifies edges a bit?
+    # Too much, gauss noise already modifies edges a bit
     ## 1. Boundary perturbation with dilation/erosio = morphological variation over random kernel (3-5)
     #if torch.rand(1, device=mask.device) < p_morph:
     #    k = torch.randint(1, 3, (1,), device=mask.device).item() * 2 + 1  # kernel = 3 or 5
@@ -479,7 +472,7 @@ class Trainer:
                 diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype) # OT permuted diagnosis scalar
 
                 # mask augmentation AFTER OT (so that OT image-mask pairing stays consistent?)
-                mask_ot_noisy = perturb_mask( mask_ot, apply_prob=0.7, p_morph=0.25, p_dropout=0.02, noise_std=0.05)
+                mask_ot_noisy = perturb_mask(mask_ot, apply_prob=0.7, p_dropout=0.02, noise_std=0.05)
 
                 #move to GPU if available: single img possible bc order manteined, add back batch dimension
                 for t_i, xt_i, ut_i, y1_i , mask_i in zip(t, xt, ut, diagnosis_ot, mask_ot_noisy): 

@@ -5,7 +5,7 @@ import torch
 import tempfile
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent)) # Add project root to sys.path for imports
 
 from model.unet_ADNI import create_model
 
@@ -168,6 +168,42 @@ def trainer_instance(device, unet_model, dummy_loader_single, mock_config_no_wan
     
     yield trainer
     del trainer
+
+
+@pytest.fixture
+def tiny_unet_model(device):
+    """Minimal UNet model for integration tests (CPU-friendly)"""
+    model = create_model(
+        image_size=64,
+        num_channels=32,      # reduced from 64
+        num_res_blocks=1,     # reduced from 2
+        in_channels=2,
+        out_channels=1,
+        num_classes=3,
+        class_cond=True,
+    ).to(device)
+    yield model
+    del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+@pytest.fixture
+def minimal_trainer_config():
+    """Minimal trainer config for integration tests (no overhead)"""
+    return {
+        "batch_size": 1,
+        "epochs": 1,
+        "lr": 2e-4,
+        "loss_type": "leh",
+        "scheduler_type": "cos",
+        "t_max_step": 1,
+        "save_every": 999,      # don't save
+        "use_ema": False,       # skip EMA
+        "warmup_steps": 0,      # no warmup
+        "grad_norm": 1.0,
+        "weight_decay": 1e-4,
+    }
 
 
 @pytest.fixture(autouse=True)

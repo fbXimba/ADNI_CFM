@@ -123,6 +123,7 @@ pytest tests/ -v
 pytest tests/ -v -m "not slow"
 
 ```
+**Coverage**: External utilities (`logger.py`, `fp16_util.py`,`modules.py`) have lower coverage as they are adapted from third-party sources. Includes minimal pipeline integration tests.
 
 ## References 
 

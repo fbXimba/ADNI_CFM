@@ -1,4 +1,4 @@
-"""Unit tests for UNet model"""
+"""Tests for UNet model"""
 
 import pytest
 import torch
@@ -6,7 +6,6 @@ import tempfile
 import os
 from model.unet_ADNI import create_model
 
-pytestmark = pytest.mark.unit
 
 class TestModelCreation:
     """Test model creation"""

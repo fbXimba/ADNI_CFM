@@ -1,11 +1,11 @@
-"""Integration and E2E tests for training and sampling"""
+"""Tests for training and sampling"""
 
 import pytest
 import torch
 from pathlib import Path
 from model.trainer import perturb_mask
+from .conftest import MockDataLoader
 
-pytestmark = pytest.mark.integration
 
 class TestTrainer:
     """Test Trainer class"""
@@ -388,3 +388,64 @@ class TestValidationAndEMA:
         model_params = len(list(trainer_instance.model.parameters()))
         ema_params = len(list(trainer_instance.ema_model.parameters()))
         assert model_params == ema_params, "EMA and main model should have same number of parameters"
+
+
+@pytest.mark.slow
+def test_training_single_step(device, tiny_unet_model, minimal_trainer_config, temp_dir):
+    """Test single training step executes full pipeline"""
+    from model.trainer import Trainer
+    
+    loader = MockDataLoader(num_batches=1, batch_size=1, device=device)
+    
+    trainer = Trainer(
+        model=tiny_unet_model,
+        loader=loader,
+        val_loader=None,
+        device=device,
+        results_dir=str(temp_dir / "results"),
+        **minimal_trainer_config,
+        wb_run=None,
+    )
+    
+    initial_params = [p.clone() for p in tiny_unet_model.parameters()]
+    trainer.train()
+    
+    assert any(
+        not torch.allclose(p_init, p) 
+        for p_init, p in zip(initial_params, tiny_unet_model.parameters())
+    ), "Model weights should change after training"
+    
+    assert trainer.step > 0, "Training step should increment"
+
+
+@pytest.mark.slow
+def test_trainer_validation(device, tiny_unet_model, temp_dir):
+    """Test validation methods with actual val_loader"""
+    from model.trainer import Trainer
+    
+    loader = MockDataLoader(num_batches=1, batch_size=1, device=device)
+    val_loader = MockDataLoader(num_batches=1, batch_size=1, device=device)
+    
+    trainer = Trainer(
+        model=tiny_unet_model,
+        loader=loader,
+        val_loader=val_loader,  # Now with validation
+        device=device,
+        batch_size=2,
+        epochs=2,
+        lr=2e-4,
+        loss_type="leh",
+        results_dir="./test_results",
+        wb_run=None
+    )
+    
+    # Test validate()
+    val_loss = trainer.validate()
+    assert val_loss is not None
+    assert isinstance(val_loss, float)
+    
+    # Test validate_ema()
+    if trainer.use_ema:
+        ema_val_loss = trainer.validate_ema()
+        assert ema_val_loss is not None
+        assert isinstance(ema_val_loss, float)

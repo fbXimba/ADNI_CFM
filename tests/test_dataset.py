@@ -1,4 +1,4 @@
-"""Unit tests for dataset"""
+"""Tests for dataset"""
 
 import pytest
 import torch
@@ -6,7 +6,6 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-pytestmark = pytest.mark.unit
 
 class TestDataset:
     """Test ADNI dataset"""
