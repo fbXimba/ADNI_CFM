@@ -108,7 +108,7 @@ class Trainer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.step = 0
-        self.tot_steps = self.epochs * len(self.loader) * self.batch_size #able to write like this due to drop_last = True in dataloader, making len(loader) constant
+        self.tot_steps = self.epochs * len(self.loader) * self.batch_size # assuming drop_last = True in dataloader, making len(loader) constant
         self.checkpoint_path = checkpoint_path
         
         self.lr = lr
@@ -453,8 +453,8 @@ class Trainer:
                 if epoch == epochs_completed and i < iteration_in_epoch:
                     continue
 
-                image = batch["image"]        # (B, 1, D, H, W)
-                mask = batch["mask"]          # (B, 1, D, H, W)
+                image = batch["image"]  # (B, 1, D, H, W)
+                mask = batch["mask"]  # (B, 1, D, H, W)
                 diagnosis = batch["diagnosis"]  # (B,)
 
                 # Sample noise as source
@@ -471,7 +471,7 @@ class Trainer:
                 mask_ot = cond_ot[:, :1] # OT permuted mask
                 diagnosis_ot = cond_ot[:, 1, 0, 0, 0].to(diagnosis.dtype) # OT permuted diagnosis scalar
 
-                # mask augmentation AFTER OT (so that OT image-mask pairing stays consistent?)
+                # mask augmentation AFTER OT (so that OT image-mask pairing stays consistent)
                 mask_ot_noisy = perturb_mask(mask_ot, apply_prob=0.7, p_dropout=0.02, noise_std=0.05)
 
                 #move to GPU if available: single img possible bc order manteined, add back batch dimension
@@ -539,8 +539,7 @@ class Trainer:
                     if self.wb_run is not None:
                         wandb.log({"step": self.step,
                                    "learning_rate": current_lr,
-                                   "training_loss": current_loss,
-                                   #"ema_loss": self.ema_val_loss
+                                   "training_loss": current_loss
                         })
 
                     # Save checkpoint #

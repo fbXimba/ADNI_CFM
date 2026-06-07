@@ -93,11 +93,11 @@ if args.key is not None:
     import wandb
     # Set environment variables to disable unwanted wandb features
     try:
-        os.environ["WANDB_DISABLE_CODE"] = "true"  # no code snapshot
+        os.environ["WANDB_DISABLE_CODE"] = "true" # no code snapshot
     except Exception as e:
         print(f"Error setting wandb environment variables: {e}")
     try:        
-        os.environ["WANDB_WATCH"] = "false"                # no model graph logging
+        os.environ["WANDB_WATCH"] = "false" # no model graph logging
     except Exception as e:
         print(f"Error setting wandb environment variables: {e}")
     # Load API key
@@ -117,7 +117,7 @@ loader = DataLoader( # from torch.utils.data
     shuffle=True,
     num_workers=args.num_workers,
     pin_memory=True, # to speed up transfer to GPU
-    #persistent_workers=True, # keep workers alive between epochs?
+    #persistent_workers=True,
     drop_last = True
 )
 
@@ -129,9 +129,9 @@ if os.path.exists(args.validation_dataset_dir):
         batch_size=args.batch_size,
         shuffle=False, # False for fixed seeds
         num_workers=args.num_workers,
-        pin_memory=False, # NOTE: try with False for memory issues at checpoint/validation
+        pin_memory=False,
         #persistent_workers = True,
-        drop_last = False # Flse for fixed seeds because shuffle False 
+        drop_last = False # False for fixed seeds because shuffle False 
     )
 
 #check 
