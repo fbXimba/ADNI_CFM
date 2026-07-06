@@ -10,8 +10,7 @@ GPU: None # set to None for auto-detection, or specify GPU id as "0", "1"...
 
 checkpoint:
   run: "20260512_174841"
-  checkpoint: "117"
-  #step: 117000
+  checkpoint: "117" # step: 117000
 
 parameters:
   epochs: 360 # 400 : 201600, 300 : 151200, 360 : 181440
@@ -59,4 +58,4 @@ dataset:
   run: "20260512_174841"
 
 wandb:
-  key: 229d8cfea5ace41820f39a5df8d7fb7a3cdcca3d
+  key: 

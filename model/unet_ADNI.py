@@ -1,7 +1,6 @@
 # unet_ADNI.py
-
-#-*- coding:utf-8 -*-
-# *Main part of the code is adopted from the following repository: https://github.com/openai/guided-diffusion
+# -*- coding:utf-8 -*-
+# Adapted from OpenAI guided-diffusion: https://github.com/openai/guided-diffusion
 
 import numpy as np
 import torch as th

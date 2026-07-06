@@ -54,12 +54,12 @@ Update `config.yaml` with your data paths, parameters, etc.
 
 **5. Train model**
 ```bash
-python train.py --epochs 360 --batch_size 8 --lr 2e-4
+python train.py 
 ```
 
 **6. Generate samples**
 ```bash
-python sampling.py --checkpoint 117 --num_samples 1 --label CN
+python sampling.py
 ```
 
 ## Configuration file 

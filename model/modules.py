@@ -1,7 +1,5 @@
-#-*- coding:utf-8 -*-
-#
-# Original code is here: https://github.com/openai/guided-diffusion
-#
+# -*- coding:utf-8 -*-
+# Adapted from OpenAI guided-diffusion: https://github.com/openai/guided-diffusion
 
 from abc import abstractmethod
 

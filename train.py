@@ -1,3 +1,5 @@
+"""Original project code for CFM_ADNI."""
+
 """
 CFM Training Script for ADNI Dataset
 """

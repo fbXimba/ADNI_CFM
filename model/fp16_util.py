@@ -1,4 +1,4 @@
-# Original code is here: https://github.com/openai/guided-diffusion
+# Adapted from OpenAI guided-diffusion: https://github.com/openai/guided-diffusion
 """
 Helpers to train with 16-bit precision.
 """

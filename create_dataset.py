@@ -1,4 +1,6 @@
-#script per creare datasets
+"""Original project code for CFM_ADNI."""
+
+# script per creare datasets
 import os
 import pandas as pd
 import argparse

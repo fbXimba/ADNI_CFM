@@ -1,3 +1,5 @@
+"""Original project code for CFM_ADNI."""
+
 import os
 import numpy as np
 import torch

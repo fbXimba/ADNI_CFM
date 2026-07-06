@@ -202,8 +202,10 @@ class Trainer:
         return loss
     
     def update_ema(self):
-        """Update EMA model weights with exponential moving average
-            ema_p_new = ema_decay * ema_p_old + (alpha = 1 - ema_decay) * model_p_current"""
+        """
+        Update EMA model weights with exponential moving average
+            ema_p_new = ema_decay * ema_p_old + (alpha = 1 - ema_decay) * model_p_current
+        """
         
         ## Move EMA model to CPU for memory efficiency during update
         #self.ema_model.cpu()
@@ -215,7 +217,13 @@ class Trainer:
     
     @torch.inference_mode() # no grad + eval for layers like dropout, batchnorm
     def validate(self):
-        """Compute validation loss with multiple fixed seeds for reproducibility and reduced bias"""
+        """
+        Compute validation loss with multiple fixed seeds for reproducibility and reduced bias 
+        Returns:
+        --------
+            avg_seed_loss: float
+                mean validation loss across all seeds for more robust metric
+        """
 
         self.model.eval()
 
@@ -274,7 +282,12 @@ class Trainer:
     
     @torch.inference_mode()
     def validate_ema(self):
-        """Compute validation loss with EMA model using multiple fixed seeds for reproducibility"""
+        """
+        Compute validation loss with EMA model using multiple fixed seeds for reproducibility       
+        Returns:
+        --------
+            avg_seed_loss: float
+                mean validation loss across all seeds for more robust metric"""
         self.ema_model.eval()
 
         seed_val_losses = []
@@ -342,7 +355,7 @@ class Trainer:
             """Recursively move tensors in nested dicts/lists to CPU"""
 
             if isinstance(obj, torch.Tensor):
-                return obj.detach().cpu().clone()  # .detach() per sicurezza extra
+                return obj.detach().cpu().clone()  # .detach() for extra security
             elif isinstance(obj, dict):
                 return {k: to_cpu(v) for k, v in obj.items()}
             elif isinstance(obj, (list, tuple)):
@@ -371,7 +384,8 @@ class Trainer:
         torch.cuda.empty_cache()
 
     def load_checkpoint(self, checkpoint_path):
-        """Load checkpoint and restore training state
+        """
+        Load checkpoint and restore training state
         Args:
         -----
             checkpoint_path: str
@@ -401,7 +415,13 @@ class Trainer:
         return self.step
     
     def wandb_log(self, now):
-        """Initialize wandb logging"""
+        """
+        Initialize wandb logging       
+        Args:
+        -----
+            now: str
+                current timestamp for unique run name
+        """
         
         #log with weights and biases 
         batch_size = self.loader.batch_size if hasattr(self.loader, 'batch_size') else 'unknown'
