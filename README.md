@@ -4,10 +4,11 @@
 
 CFM_ADNI is a pipeline for training a Conditional Flow Matching model on the ADNI dataset to generate synthetic 3D brain MRIs. The model learns to generate realistic brain images conditioned on diagnostic labels (CN, MCI, AD) from ***preprocessed*** real patient data using Conditional Flow Matching (CFM) and Optimal Transport.
 
-**Note**: The preprocessing pipeline used for the ADNI dataset can be found on [ADNI_preprocessing](https://github.com/fbXimba/ADNI_preprocessing). The postprocessing pipeline used to reinstate the sampled volumes to ouput similar to the ones from FreeSurfer can be found on [ADNI_postprocessing](https://github.com/fbXimba/ADNI_postprocessing)
+This project builds on `guided-diffusion` and `torchcfm`. The 3D UNet and utily modules are adapted from upstream sources, while the dataset, training, sampling, and evaluation workflow were developed for this project.
+
+**Note**: My preprocessing pipeline used for the ADNI dataset can be found on [ADNI_preprocessing](https://github.com/fbXimba/ADNI_preprocessing). My postprocessing pipeline used to reinstate the sampled volumes to ouput similar to the ones from FreeSurfer can be found on [ADNI_postprocessing](https://github.com/fbXimba/ADNI_postprocessing)
 
 ## Data
-
 
 The ADNI dataset is public but an application process it's required to access it. If interested please see at [ADNI data](https://adni.loni.usc.edu/data-samples/adni-data/).
 
@@ -15,8 +16,8 @@ The ADNI dataset is public but an application process it's required to access it
 
 ```
 Preprocessed ADNI Data → [Train] → CFM+OT Model → [Sample] → Synthetic Brain MRI Dataset
-              ↓
-         Checkpoints & Metrics
+                            ↓                                           ↓
+                        Checkpoints                                   Metrics
 ```
 
 ## Main Scripts 
@@ -29,7 +30,7 @@ Preprocessed ADNI Data → [Train] → CFM+OT Model → [Sample] → Synthetic B
 
 ## Requirements and setup:
 
-**1. Pytorch**
+**1. Pytorch** :fire:
 
 Install Python >= 3.10 and PyTorch >=2.0 with **your** CUDA version from 
 [pytorch.org](https://pytorch.org/get-started/locally/) 
@@ -40,19 +41,25 @@ first. GPU use is strongly recommended for both training and sampling.
 ```bash
 pip install -r requirements.txt
 ```
-**3. Paths**
+
+**3. Install the project**
+
+```bash
+pip install -e .
+```
+
+**4. Paths**
 
 Update `config.yaml` with your data paths, parameters, etc.
 
-**4. Train model**
+**5. Train model**
 ```bash
 python train.py --epochs 360 --batch_size 8 --lr 2e-4
 ```
 
-**5. Generate samples**
+**6. Generate samples**
 ```bash
-python sampling.py --checkpoint 117 --num_samples 1 
---label CN
+python sampling.py --checkpoint 117 --num_samples 1 --label CN
 ```
 
 ## Configuration file 
@@ -60,8 +67,7 @@ python sampling.py --checkpoint 117 --num_samples 1
 Edit `config.yaml` to set:
 - :warning: GPU id if multiple available
 - Data directories (training/validation/test paths)
-- Model hyperparameters (learning rate, batch size, 
-epochs, loss type, ...)
+- Model hyperparameters (learning rate, batch size, epochs, loss type, ...)
 - Weights and Biases logging key :key:
 
 ## Model Architecture 
@@ -106,7 +112,7 @@ sample_dir/
 ```
 ## Testing :beetle:
 
-Testing infrastructure with synthetic/mock data: better reproducibility (no ADNI dataset needed) but limiting.
+Testing uses synthetic/mock data so the suite runs without the ADNI dataset.
 
 Naming convention: test_< feature >_< scenario >.
 
@@ -123,9 +129,11 @@ pytest tests/ -v
 pytest tests/ -v -m "not slow"
 
 ```
-**Coverage**: External utilities (`logger.py`, `fp16_util.py`,`modules.py`) have lower coverage as they are adapted from third-party sources. Includes minimal pipeline integration tests.
+**Coverage**: External utilities (`logger.py`, `fp16_util.py`,`modules.py`) from the adopted UNet (`unet_ADNI.py`) have lower coverage as they are from a third-party source.
 
 ## References 
 
 - UNet architecture adapted from [OpenAI's guided-diffusion](https://github.com/openai/guided-diffusion)
-- CFM framework from [torchcfm](https://github.com/atong01/conditional-flow-matching), with Minibatch Optimal Transport from ["Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport"](https://arxiv.org/abs/2302.00482)
+- CFM framework (torchfm library) from [torchcfm](https://github.com/atong01/conditional-flow-matching), with Minibatch Optimal Transport from ["Improving and Generalizing Flow-Based Generative Models with Minibatch Optimal Transport"](https://arxiv.org/abs/2302.00482)
+
+**Note**: Non-original work includes the 3D UNet and supporting utility modules (logger.py, modules.py, fp16_util.py).
