@@ -57,3 +57,8 @@ py-modules = ["dataset", "sampling", "train", "create_dataset"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
