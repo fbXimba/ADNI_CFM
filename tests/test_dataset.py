@@ -2,16 +2,21 @@
 
 import pytest
 import torch
-import pandas as pd
-import numpy as np
 from pathlib import Path
+
+from .conftest import build_mock_adni_dataset
 
 
 class TestDataset:
     """Test ADNI dataset"""
     
     def test_dataset_imports(self):
-        """Test that dataset module can be imported"""
+        """Verify that the dataset module exposes `ADNIDataset`.
+
+        Returns
+        -------
+        None
+        """
         try:
             from dataset import ADNIDataset
             assert ADNIDataset is not None
@@ -19,33 +24,24 @@ class TestDataset:
             pytest.skip(f"Dataset import failed: {e}")
     
     def test_dataset_initialization(self, temp_dir):
-        """Test dataset initialization with valid structure"""
+        """Verify that dataset initialization succeeds for a valid layout.
+
+        Parameters
+        ----------
+        temp_dir : pathlib.Path
+            Temporary directory used to build the mock dataset.
+        """
         try:
-            import nibabel as nib
             from dataset import ADNIDataset
         except Exception as e:
             pytest.skip(f"Dependencies missing: {e}")
-        
-        # Create mock directory structure
-        dataset_dir = Path(temp_dir) / "dataset"
-        dataset_dir.mkdir(exist_ok=True)
-        (dataset_dir / "image").mkdir(exist_ok=True)
-        (dataset_dir / "mask").mkdir(exist_ok=True)
-        (dataset_dir / "diagnosis").mkdir(exist_ok=True)
-        
-        # Create dummy NIfTI files
-        for i in range(2):
-            img_data = np.random.randn(64, 64, 64)
-            mask_data = np.random.randn(64, 64, 64)
-            
-            nib.save(nib.Nifti1Image(img_data, np.eye(4)), 
-                    dataset_dir / "image" / f"subject{i}_brain.nii.gz")
-            nib.save(nib.Nifti1Image(mask_data, np.eye(4)), 
-                    dataset_dir / "mask" / f"subject{i}_mask.nii.gz")
-        
-        # Create diagnosis CSV
-        df = pd.DataFrame({"Subject": ["subject0", "subject1"], "Diagnosis": [0, 1]})
-        df.to_csv(dataset_dir / "diagnosis" / "train_subjects.csv", index=False)
+
+        dataset_dir = build_mock_adni_dataset(
+            Path(temp_dir) / "dataset",
+            ["subject0", "subject1"],
+            diagnoses=[0, 1],
+            shape=(64, 64, 64),
+        )
         
         # Test initialization
         dataset = ADNIDataset(str(dataset_dir), split="train")
@@ -53,60 +49,47 @@ class TestDataset:
         assert len(dataset) == 2
     
     def test_dataset_length(self, temp_dir):
-        """Test dataset __len__ method"""
+        """Verify that dataset length matches the number of subjects.
+
+        Parameters
+        ----------
+        temp_dir : pathlib.Path
+            Temporary directory used to build the mock dataset.
+        """
         try:
-            import nibabel as nib
             from dataset import ADNIDataset
         except Exception as e:
             pytest.skip(f"Dependencies missing: {e}")
-        
-        dataset_dir = Path(temp_dir) / "dataset"
-        dataset_dir.mkdir(exist_ok=True)
-        (dataset_dir / "image").mkdir(exist_ok=True)
-        (dataset_dir / "mask").mkdir(exist_ok=True)
-        (dataset_dir / "diagnosis").mkdir(exist_ok=True)
-        
-        # Create 3 subjects
-        for i in range(3):
-            img_data = np.random.randn(32, 32, 32)
-            mask_data = np.random.randn(32, 32, 32)
-            
-            nib.save(nib.Nifti1Image(img_data, np.eye(4)), 
-                    dataset_dir / "image" / f"subj{i}_brain.nii.gz")
-            nib.save(nib.Nifti1Image(mask_data, np.eye(4)), 
-                    dataset_dir / "mask" / f"subj{i}_mask.nii.gz")
-        
-        df = pd.DataFrame({"Subject": [f"subj{i}" for i in range(3)], "Diagnosis": [0, 1, 2]})
-        df.to_csv(dataset_dir / "diagnosis" / "train_subjects.csv", index=False)
+
+        dataset_dir = build_mock_adni_dataset(
+            Path(temp_dir) / "dataset",
+            ["subj0", "subj1", "subj2"],
+            diagnoses=[0, 1, 2],
+            shape=(32, 32, 32),
+        )
         
         dataset = ADNIDataset(str(dataset_dir), split="train")
         assert len(dataset) == 3
     
     def test_dataset_getitem_format(self, temp_dir):
-        """Test dataset __getitem__ returns correct format"""
+        """Verify that dataset items return the expected tensor dict.
+        
+        Parameters
+        ----------
+        temp_dir : str
+            Temporary directory for the test data.
+        """
         try:
-            import nibabel as nib
             from dataset import ADNIDataset
         except Exception as e:
             pytest.skip(f"Dependencies missing: {e}")
-        
-        dataset_dir = Path(temp_dir) / "dataset"
-        dataset_dir.mkdir(exist_ok=True)
-        (dataset_dir / "image").mkdir(exist_ok=True)
-        (dataset_dir / "mask").mkdir(exist_ok=True)
-        (dataset_dir / "diagnosis").mkdir(exist_ok=True)
-        
-        # Create single subject
-        img_data = np.random.randn(48, 48, 48).astype(np.float32)
-        mask_data = np.random.randn(48, 48, 48).astype(np.float32)
-        
-        nib.save(nib.Nifti1Image(img_data, np.eye(4)), 
-                dataset_dir / "image" / "test_brain.nii.gz")
-        nib.save(nib.Nifti1Image(mask_data, np.eye(4)), 
-                dataset_dir / "mask" / "test_mask.nii.gz")
-        
-        df = pd.DataFrame({"Subject": ["test"], "Diagnosis": [1]})
-        df.to_csv(dataset_dir / "diagnosis" / "train_subjects.csv", index=False)
+
+        dataset_dir = build_mock_adni_dataset(
+            Path(temp_dir) / "dataset",
+            ["test"],
+            diagnoses=[1],
+            shape=(48, 48, 48),
+        )
         
         dataset = ADNIDataset(str(dataset_dir), split="train")
         item = dataset[0]
@@ -124,4 +107,6 @@ class TestDataset:
         assert isinstance(item["image"], torch.Tensor)
         assert isinstance(item["mask"], torch.Tensor)
         assert isinstance(item["diagnosis"], torch.Tensor)
+        assert torch.all(item["image"] == 0)
+        assert torch.all(item["mask"] == 1)
 

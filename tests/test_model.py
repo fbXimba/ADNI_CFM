@@ -11,7 +11,13 @@ class TestModelCreation:
     """Test model creation"""
     
     def test_create_model(self, mock_config):
-        """Test basic model creation"""
+        """Verify that the configured UNet model can be created.
+
+        Parameters
+        ----------
+        mock_config : dict
+            Mock configuration used to build the model.
+        """
         params = mock_config["parameters"]
         model = create_model(
             image_size=params["input_size"],
@@ -26,7 +32,12 @@ class TestModelCreation:
         assert isinstance(model, torch.nn.Module)
     
     def test_create_model_without_conditioning(self):
-        """Test model creation without class conditioning"""
+        """Verify that the model can be created without class conditioning.
+
+        Returns
+        -------
+        None
+        """
         model = create_model(
             image_size=128,
             num_channels=64,
@@ -44,7 +55,15 @@ class TestModelForwardPass:
     """Test model forward pass"""
     
     def test_forward_pass(self, unet_model, device):
-        """Test forward pass and output shape"""
+        """Verify the forward pass output shape for a batched input.
+
+        Parameters
+        ----------
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        device : torch.device
+            Execution device for the tensors.
+        """
         batch_size = 2
         input_tensor = torch.randn(batch_size, 2, 64, 64, 64, device=device)
         timesteps = torch.randint(0, 1000, (batch_size,), device=device)
@@ -57,7 +76,15 @@ class TestModelForwardPass:
         assert output.device == device
     
     def test_model_eval_mode(self, unet_model, device):
-        """Test model in eval mode"""
+        """Verify that the model runs correctly in evaluation mode.
+
+        Parameters
+        ----------
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        device : torch.device
+            Execution device for the tensors.
+        """
         unet_model.eval()
         
         x = torch.randn(1, 2, 64, 64, 64, device=device)
@@ -71,7 +98,15 @@ class TestModelForwardPass:
         assert output.shape[1] == 1  # Output channels
     
     def test_training_mode(self, unet_model, device):
-        """Test model in training mode"""
+        """Verify that the model runs correctly in training mode.
+
+        Parameters
+        ----------
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        device : torch.device
+            Execution device for the tensors.
+        """
         unet_model.train()
         
         x = torch.randn(1, 2, 64, 64, 64, device=device)
@@ -88,12 +123,23 @@ class TestModelProperties:
     """Test model properties"""
     
     def test_model_has_parameters(self, unet_model):
-        """Test model has trainable parameters"""
+        """Verify that the model exposes trainable parameters.
+
+        Parameters
+        ----------
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        """
         params = list(unet_model.parameters())
         assert len(params) > 0
     
     def test_model_state_dict(self):
-        """Test model state dict"""
+        """Verify that the model state dict can be saved and reloaded.
+
+        Returns
+        -------
+        None
+        """
         model = create_model(
             image_size=128,
             num_channels=64,

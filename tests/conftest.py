@@ -1,8 +1,12 @@
 """pytest fixtures for tests"""
 
+import random
 import pytest
 import torch
 import tempfile
+import numpy as np
+import pandas as pd
+import nibabel as nib
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent)) # Add project root to sys.path for imports
@@ -59,15 +63,55 @@ class MockDataLoader:
         self.device = device or torch.device("cpu")
     
     def __iter__(self):
-        for _ in range(self.num_batches):
+        for batch_index in range(self.num_batches):
             yield {
-                "image": torch.randn(self.batch_size, 1, 64, 64, 64, device=self.device),
-                "mask": torch.randn(self.batch_size, 1, 64, 64, 64, device=self.device),
-                "diagnosis": torch.randint(0, 3, (self.batch_size,), device=self.device),
+                "image": torch.full(
+                    (self.batch_size, 1, 64, 64, 64),
+                    float(batch_index),
+                    device=self.device,
+                ),
+                "mask": torch.full(
+                    (self.batch_size, 1, 64, 64, 64),
+                    float(batch_index + 1),
+                    device=self.device,
+                ),
+                "diagnosis": torch.arange(self.batch_size, device=self.device) % 3,
             }
     
     def __len__(self):
         return self.num_batches
+
+
+def build_mock_adni_dataset(dataset_dir: Path, subject_ids, diagnoses=None, shape=(64, 64, 64), split="train"):
+    """Build a deterministic ADNI-like dataset tree for tests."""
+    dataset_dir = Path(dataset_dir)
+    image_dir = dataset_dir / "image"
+    mask_dir = dataset_dir / "mask"
+    diagnosis_dir = dataset_dir / "diagnosis"
+
+    image_dir.mkdir(parents=True, exist_ok=True)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    diagnosis_dir.mkdir(parents=True, exist_ok=True)
+
+    if diagnoses is None:
+        diagnoses = list(range(len(subject_ids)))
+
+    for index, subject_id in enumerate(subject_ids):
+        image_data = np.full(shape, float(index), dtype=np.float32)
+        mask_data = np.full(shape, float(index + 1), dtype=np.float32)
+
+        nib.save(
+            nib.Nifti1Image(image_data, np.eye(4)),
+            image_dir / f"{subject_id}_brain.nii.gz",
+        )
+        nib.save(
+            nib.Nifti1Image(mask_data, np.eye(4)),
+            mask_dir / f"{subject_id}_mask.nii.gz",
+        )
+
+    df = pd.DataFrame({"Subject": list(subject_ids), "Diagnosis": list(diagnoses)})
+    df.to_csv(diagnosis_dir / f"{split}_subjects.csv", index=False)
+    return dataset_dir
 
 
 # ============================================================================
@@ -209,6 +253,8 @@ def minimal_trainer_config():
 @pytest.fixture(autouse=True)
 def reset_seed():
     """Reset torch seed for reproducibility"""
+    random.seed(42)
+    np.random.seed(42)
     torch.manual_seed(42)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(42)

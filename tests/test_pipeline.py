@@ -15,7 +15,17 @@ class TestTrainPipeline:
     """Minimal test of train.py workflow"""
     
     def test_train_script_produces_checkpoint(self, temp_dir, trainer_instance, device):
-        """Verify train.py logic produces a checkpoint file."""
+        """Verify that the training workflow writes a checkpoint file.
+
+        Parameters
+        ----------
+        temp_dir : pathlib.Path
+            Temporary directory used by the test.
+        trainer_instance : model.trainer.Trainer
+            Configured trainer fixture used to save the checkpoint.
+        device : torch.device
+            Execution device for the test tensors.
+        """
         # Manually save a checkpoint (simulating what train.py does periodically)
         checkpoint_path = temp_dir / "checkpoint_1.pt"
         trainer_instance.save_checkpoint()
@@ -38,7 +48,17 @@ class TestSamplingPipeline:
     def test_sampling_script_loads_checkpoint_and_generates(
         self, temp_dir, unet_model, device
     ):
-        """Verify sampling.py logic: load checkpoint + ODE sampling"""
+        """Verify that sampling loads a checkpoint and produces a sample.
+
+        Parameters
+        ----------
+        temp_dir : pathlib.Path
+            Temporary directory used by the test.
+        unet_model : torch.nn.Module
+            UNet fixture used for checkpoint loading and sampling.
+        device : torch.device
+            Execution device for the tensors.
+        """
         checkpoint_dir = temp_dir / "checkpoints"
         checkpoint_dir.mkdir()
         

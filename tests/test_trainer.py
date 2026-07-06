@@ -11,7 +11,15 @@ class TestTrainer:
     """Test Trainer class"""
     
     def test_trainer_init(self, trainer_instance, device):
-        """Test trainer initialization"""
+        """Verify that the trainer fixture is initialized correctly.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture under test.
+        device : torch.device
+            Execution device for the test.
+        """
         assert trainer_instance is not None
         assert trainer_instance.model is not None
         assert trainer_instance.loader is not None
@@ -19,22 +27,36 @@ class TestTrainer:
         assert trainer_instance.step == 0
     
     def test_compute_loss(self, trainer_instance, device):
-        """Test loss computation"""
-        # Create synthetic tensors for noise and velocity
-        ut = torch.randn(1, 1, 64, 64, 64, device=device)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
+        """Verify that the default loss type returns the expected value.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to compute the loss.
+        device : torch.device
+            Execution device for the tensors.
+        """
+        ut = torch.tensor([[[[[0.0, 2.0]]]]], device=device)
+        vt = torch.tensor([[[[[1.0, 0.0]]]]], device=device)
         
         # Compute loss
         loss = trainer_instance.compute_loss(ut, vt)
         
         # Check loss properties
         assert isinstance(loss, torch.Tensor)
-        assert loss.item() >= 0
         assert loss.dim() == 0  # Scalar
-        assert not torch.isnan(loss)
+        assert torch.isclose(loss, torch.tensor(1.8, device=device), atol=1e-6)
     
     def test_checkpoint_save(self, trainer_instance, temp_dir):
-        """Test checkpoint saving"""
+        """Verify that checkpoint saving writes at least one file.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to save the checkpoint.
+        temp_dir : pathlib.Path
+            Temporary directory used by the test.
+        """
         trainer_instance.results_dir = str(temp_dir / "results")
         (temp_dir / "results").mkdir(exist_ok=True)
         
@@ -44,7 +66,17 @@ class TestTrainer:
         assert len(checkpoint_files) > 0
     
     def test_checkpoint_load(self, trainer_instance, temp_dir, device):
-        """Test checkpoint loading"""
+        """Verify that a saved checkpoint can be loaded back.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to save the checkpoint.
+        temp_dir : pathlib.Path
+            Temporary directory used by the test.
+        device : torch.device
+            Device used when loading the checkpoint.
+        """
         trainer_instance.results_dir = str(temp_dir / "results")
         (temp_dir / "results").mkdir(exist_ok=True)
         
@@ -64,7 +96,13 @@ class TestTrainer:
         assert isinstance(checkpoint["step"], int)
     
     def test_ema_update(self, trainer_instance):
-        """Test EMA update"""
+        """Verify that the EMA model updates when EMA is enabled.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used for the EMA update.
+        """
         if trainer_instance.use_ema:
             # Check EMA model exists
             assert trainer_instance.ema_model is not None
@@ -80,58 +118,41 @@ class TestTrainer:
 class TestLosses:
     """Test loss computation"""
     
-    def test_loss_l1(self, trainer_instance, device):
-        """Test L1 loss"""
-        trainer_instance.loss_type = "l1"
-        
-        ut = torch.randn(1, 1, 64, 64, 64, device=device)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
-        
-        loss = trainer_instance.compute_loss(ut, vt)
-        
-        assert loss.item() >= 0
-        assert loss.dim() == 0
-    
-    def test_loss_l2(self, trainer_instance, device):
-        """Test L2 loss"""
-        trainer_instance.loss_type = "l2"
-        
-        ut = torch.randn(1, 1, 64, 64, 64, device=device)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
-        
-        loss = trainer_instance.compute_loss(ut, vt)
-        
-        assert loss.item() >= 0
-        assert loss.dim() == 0
-    
-    def test_loss_leh(self, trainer_instance, device):
-        """Test LEH loss"""
-        trainer_instance.loss_type = "leh"
-        
-        ut = torch.randn(1, 1, 64, 64, 64, device=device)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
-        
-        loss = trainer_instance.compute_loss(ut, vt)
-        
-        assert loss.item() >= 0
-        assert loss.dim() == 0
-    
-    def test_loss_leb(self, trainer_instance, device):
-        """Test LEB loss"""
-        trainer_instance.loss_type = "leb"
-        
-        ut = torch.randn(1, 1, 64, 64, 64, device=device)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
-        
-        loss = trainer_instance.compute_loss(ut, vt)
-        
-        assert loss.item() >= 0
-        assert loss.dim() == 0
-    
+    @pytest.mark.parametrize(
+        "loss_type, expected",
+        [
+            ("l1", 1.5),
+            ("l2", 2.5),
+            ("leh", 1.8),
+            ("leb", 2.2),
+        ],
+    )
+    def test_loss_variants(self, trainer_instance, device, loss_type, expected):
+        """Verify that each loss type produces its own expected value.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to compute the loss.
+        device : torch.device
+            Execution device for the tensors.
+        loss_type : str
+            Loss type under test.
+        expected : float
+            Expected scalar loss value for the fixed tensor pair.
+        """
     def test_loss_gradient_flow(self, trainer_instance, device):
-        """Test that gradients flow through loss"""
-        ut = torch.randn(1, 1, 64, 64, 64, device=device, requires_grad=True)
-        vt = torch.randn(1, 1, 64, 64, 64, device=device)
+        """Verify that the loss remains differentiable.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to compute the loss.
+        device : torch.device
+            Execution device for the tensors.
+        """
+        ut = torch.tensor([[[[[0.0, 2.0]]]]], device=device, requires_grad=True)
+        vt = torch.tensor([[[[[1.0, 0.0]]]]], device=device)
         
         loss = trainer_instance.compute_loss(ut, vt)
         
@@ -144,7 +165,15 @@ class TestSampling:
     
     @pytest.mark.slow
     def test_sampling_produces_output(self, unet_model_eval, device):
-        """Test sampling produces correct output shape"""
+        """Verify that sampling produces an output with the expected shape.
+
+        Parameters
+        ----------
+        unet_model_eval : torch.nn.Module
+            UNet fixture in evaluation mode.
+        device : torch.device
+            Execution device for the tensors.
+        """
         noise = torch.randn(1, 1, 64, 64, 64, device=device)
         mask = torch.randn(1, 1, 64, 64, 64, device=device)
         diagnosis = torch.tensor([0], device=device)
@@ -160,7 +189,15 @@ class TestSampling:
     
     @pytest.mark.slow
     def test_sampling_all_diagnoses(self, unet_model_eval, device):
-        """Test sampling for all diagnosis classes"""
+        """Verify that sampling runs for every diagnosis class.
+
+        Parameters
+        ----------
+        unet_model_eval : torch.nn.Module
+            UNet fixture in evaluation mode.
+        device : torch.device
+            Execution device for the tensors.
+        """
         noise = torch.randn(1, 1, 64, 64, 64, device=device)
         mask = torch.randn(1, 1, 64, 64, 64, device=device)
         
@@ -181,7 +218,15 @@ class TestPipelines:
     
     @pytest.mark.slow
     def test_batch_consistency(self, unet_model_eval, device):
-        """Test batch processing is consistent"""
+        """Verify that batched inference preserves the batch dimension.
+
+        Parameters
+        ----------
+        unet_model_eval : torch.nn.Module
+            UNet fixture in evaluation mode.
+        device : torch.device
+            Execution device for the tensors.
+        """
         # Process as batch
         combined = torch.randn(2, 2, 64, 64, 64, device=device)
         timesteps = torch.tensor([500, 500], device=device)
@@ -197,7 +242,15 @@ class TestValidation:
     """Test validation workflow"""
     
     def test_validate_with_loader(self, trainer_instance, device):
-        """Test validation step"""
+        """Verify that validation-style inference runs without crashing.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used for the validation step.
+        device : torch.device
+            Execution device for the tensors.
+        """
         if trainer_instance.val_loader is not None:
             # Create simple val loader
             val_batch = {
@@ -221,7 +274,13 @@ class TestMaskPerturbation:
     """Test mask augmentation"""
     
     def test_perturb_mask_shape(self, device):
-        """Test perturb_mask preserves shape"""
+        """Verify that mask perturbation preserves tensor shape.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the tensors.
+        """
         mask = torch.randn(4, 1, 64, 64, 64, device=device)
         
         perturbed = perturb_mask(mask, apply_prob=1.0)
@@ -230,7 +289,13 @@ class TestMaskPerturbation:
         assert perturbed.device == device
     
     def test_perturb_mask_range(self, device):
-        """Test perturb_mask stays in original range"""
+        """Verify that mask perturbation stays close to the input range.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the tensors.
+        """
         mask = torch.rand(4, 1, 64, 64, 64, device=device) * 2 - 1  # Range [-1, 1]
         orig_min = mask.min()
         orig_max = mask.max()
@@ -242,7 +307,13 @@ class TestMaskPerturbation:
         assert perturbed.max() <= orig_max + 0.1
     
     def test_perturb_mask_skip_probability(self, device):
-        """Test perturb_mask skip with low probability"""
+        """Verify that mask perturbation can be disabled by probability.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the tensors.
+        """
         mask = torch.ones(1, 1, 64, 64, 64, device=device) * 0.5
         
         perturbed = perturb_mask(mask, apply_prob=0.0)  # Never apply
@@ -256,7 +327,15 @@ class TestBatchSizes:
 
     @pytest.mark.slow
     def test_forward_pass_batch_8(self, unet_model, device):
-        """Test model with realistic batch size 8"""
+        """Verify that forward pass works for a larger batch size.
+
+        Parameters
+        ----------
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        device : torch.device
+            Execution device for the tensors.
+        """
         batch_size = 8
         input_tensor = torch.randn(batch_size, 2, 64, 64, 64, device=device)
         timesteps = torch.randint(0, 1000, (batch_size,), device=device)
@@ -270,7 +349,15 @@ class TestBatchSizes:
     
     #@pytest.mark.slow
     def test_loss_computation_batch_4(self, trainer_instance, device):
-        """Test loss computation with batch size 4"""
+        """Verify that loss computation works for a medium batch size.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture used to compute the loss.
+        device : torch.device
+            Execution device for the tensors.
+        """
         ut = torch.randn(4, 1, 64, 64, 64, device=device)
         vt = torch.randn(4, 1, 64, 64, 64, device=device)
         
@@ -285,7 +372,19 @@ class TestTrainerSchedulers:
     """Test trainer with different learning rate schedulers"""
     
     def test_trainer_cosine_scheduler(self, device, mock_config_no_wandb, unet_model, dummy_loader_single):
-        """Test trainer initialization with cosine annealing scheduler"""
+        """Verify that cosine scheduling is configured correctly.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the trainer.
+        mock_config_no_wandb : dict
+            Mock configuration without Weights & Biases.
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        dummy_loader_single : MockDataLoader
+            Minimal data loader fixture.
+        """
         from model.trainer import Trainer
         
         trainer = Trainer(
@@ -307,7 +406,19 @@ class TestTrainerSchedulers:
         assert trainer.loss_type == "leh"
     
     def test_trainer_exponential_scheduler(self, device, mock_config_no_wandb, unet_model, dummy_loader_single):
-        """Test trainer with exponential decay scheduler"""
+        """Verify that exponential scheduling is configured correctly.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the trainer.
+        mock_config_no_wandb : dict
+            Mock configuration without Weights & Biases.
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        dummy_loader_single : MockDataLoader
+            Minimal data loader fixture.
+        """
         from model.trainer import Trainer
         
         trainer = Trainer(
@@ -328,7 +439,19 @@ class TestTrainerSchedulers:
         assert trainer.lr_scheduler is not None
     
     def test_trainer_no_scheduler(self, device, mock_config_no_wandb, unet_model, dummy_loader_single):
-        """Test trainer with no learning rate scheduler"""
+        """Verify that the trainer can be created without a scheduler.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the trainer.
+        mock_config_no_wandb : dict
+            Mock configuration without Weights & Biases.
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        dummy_loader_single : MockDataLoader
+            Minimal data loader fixture.
+        """
         from model.trainer import Trainer
         
         trainer = Trainer(
@@ -352,12 +475,32 @@ class TestValidationAndEMA:
     """Test validation and EMA model functionality"""
     
     def test_validate_method_callable(self, trainer_instance, device):
-        """Test that validate method exists and is callable"""
+        """Verify that the validate method exists and is callable.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture under test.
+        device : torch.device
+            Execution device for the test.
+        """
         assert hasattr(trainer_instance, 'validate')
         assert callable(trainer_instance.validate)
     
     def test_trainer_with_ema(self, device, mock_config_no_wandb, unet_model, dummy_loader_single):
-        """Test trainer initialization with EMA model"""
+        """Verify that the trainer creates an EMA model when enabled.
+
+        Parameters
+        ----------
+        device : torch.device
+            Execution device for the trainer.
+        mock_config_no_wandb : dict
+            Mock configuration without Weights & Biases.
+        unet_model : torch.nn.Module
+            The test UNet model fixture.
+        dummy_loader_single : MockDataLoader
+            Minimal data loader fixture.
+        """
         from model.trainer import Trainer
         
         trainer = Trainer(
@@ -380,7 +523,15 @@ class TestValidationAndEMA:
         assert len(list(trainer.ema_model.parameters())) == len(list(trainer.model.parameters()))
     
     def test_ema_parameter_tracking(self, trainer_instance, device):
-        """Test that EMA model is created with trainer"""
+        """Verify that EMA and main models expose the same parameter count.
+
+        Parameters
+        ----------
+        trainer_instance : model.trainer.Trainer
+            Trainer fixture under test.
+        device : torch.device
+            Execution device for the test.
+        """
         if trainer_instance.ema_model is None:
             pytest.skip("EMA not enabled in trainer_instance fixture")
         
@@ -392,7 +543,19 @@ class TestValidationAndEMA:
 
 @pytest.mark.slow
 def test_training_single_step(device, tiny_unet_model, minimal_trainer_config, temp_dir):
-    """Test single training step executes full pipeline"""
+    """Verify that a single training step updates model weights.
+
+    Parameters
+    ----------
+    device : torch.device
+        Execution device for the test.
+    tiny_unet_model : torch.nn.Module
+        Small UNet fixture used for the integration test.
+    minimal_trainer_config : dict
+        Minimal trainer configuration for the test.
+    temp_dir : pathlib.Path
+        Temporary directory used by the test.
+    """
     from model.trainer import Trainer
     
     loader = MockDataLoader(num_batches=1, batch_size=1, device=device)
@@ -420,7 +583,17 @@ def test_training_single_step(device, tiny_unet_model, minimal_trainer_config, t
 
 @pytest.mark.slow
 def test_trainer_validation(device, tiny_unet_model, temp_dir):
-    """Test validation methods with actual val_loader"""
+    """Verify that validation methods return a float loss value.
+
+    Parameters
+    ----------
+    device : torch.device
+        Execution device for the test.
+    tiny_unet_model : torch.nn.Module
+        Small UNet fixture used for the integration test.
+    temp_dir : pathlib.Path
+        Temporary directory used by the test.
+    """
     from model.trainer import Trainer
     
     loader = MockDataLoader(num_batches=1, batch_size=1, device=device)
