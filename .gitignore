@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# vscode
+.vscode/
+
+# Pipeline specific files
+key.yaml
+results_CFM_ADNI/
+gen_samples_CFM_ADNI/
