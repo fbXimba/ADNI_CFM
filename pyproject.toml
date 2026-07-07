@@ -62,3 +62,14 @@ exclude = ["tests*"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.coverage.run]
+source = ["dataset", "sampling", "model"]
+omit = [
+  "tests/*",
+  "/tmp/*",
+  "model/logger.py",
+  "model/fp16_util.py",
+  "model/modules.py",
+  "model/__init__.py",
+]
