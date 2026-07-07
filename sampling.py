@@ -342,7 +342,7 @@ def sample_model(model: torch.nn.Module, mask_dir: str, num_samples: int, target
 # MAIN SAMPLING CODE
 ###############################################################################
 
-if __name__ == "__main__":
+def main(argv=None):
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
     dirs = config["directories"]
@@ -370,7 +370,7 @@ if __name__ == "__main__":
     parser.add_argument("--GPU", type=str, default=gpu_id, help="GPU id to use for sampling, set to None for auto-detection")
     #parser.add_argument("--csv_file_dataset", type=str, default=samp["csv_file_dataset"], help="CSV file coupling seeds, subjects and diagnosis for dataset creation")
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
       
     print("NOTE: assuming parameters correspond to the trained model chosen!!")
 
@@ -389,7 +389,7 @@ if __name__ == "__main__":
 
     # Create sample directory with timestamp
     #now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    sample_dir = os.path.join(args.sample_dir, args.run, args.checkpoint)
+    sample_dir = os.path.join(args.sample_dir, args.run, str(args.checkpoint))
     os.makedirs(sample_dir, exist_ok=True)
     
     # Set device
@@ -417,4 +417,8 @@ if __name__ == "__main__":
         samples_data = sample_model(model, mask_dir, args.num_samples, target_label, args.seed, device)
     
     # Save samples to output folder
-    save_samples(samples_data, sample_dir)
+    return save_samples(samples_data, sample_dir)
+
+
+if __name__ == "__main__":
+    main()
